@@ -1,0 +1,95 @@
+-- 1. Habilitar el motor espacial PostGIS
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+-- ==============================================================================
+-- CAPA DE AUTENTICACIÓN Y PERSONAL
+-- ==============================================================================
+
+CREATE TABLE usuarios (
+    rut_usuario VARCHAR(12) PRIMARY KEY,
+    password_hash VARCHAR(255) NOT NULL,
+    rol VARCHAR(50) NOT NULL CHECK (rol IN ('SUPERVISOR_WEB', 'FUNCIONARIO_MOVIL')),
+    nombre_completo VARCHAR(150) NOT NULL
+);
+
+-- ==============================================================================
+-- CAPA OPERATIVA (TURNOS, VEHÍCULOS Y TRIPULACIÓN)
+-- ==============================================================================
+
+CREATE TABLE sesiones_operativas (
+    id_sesion BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    imei_simcard VARCHAR(50) NOT NULL,
+    rut_conductor VARCHAR(12) NOT NULL REFERENCES usuarios(rut_usuario),
+    tipo_transporte VARCHAR(30) NOT NULL CHECK (tipo_transporte IN ('PATRULLA', 'MOTO', 'BICICLETA')),
+    estado_operativo VARCHAR(50) DEFAULT 'DISPONIBLE' CHECK (estado_operativo IN ('DISPONIBLE', 'EN_RUTA_HOTSPOT', 'PATRULLANDO_ZONA', 'OCUPADO_EMERGENCIA', 'INACTIVO')),
+    fecha_inicio TIMESTAMP DEFAULT NOW(),
+    fecha_cierre TIMESTAMP NULL
+);
+
+CREATE TABLE tripulacion_sesion (
+    id_tripulacion BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id_sesion BIGINT NOT NULL REFERENCES sesiones_operativas(id_sesion) ON DELETE CASCADE,
+    rut_acompanante VARCHAR(12) NOT NULL REFERENCES usuarios(rut_usuario)
+);
+
+-- ==============================================================================
+-- CAPA ESPACIAL DE ANÁLISIS Y TELEMETRÍA (PUNTOS Y MAPAS DE CALOR)
+-- ==============================================================================
+
+CREATE TABLE eventos_hotspots (
+    id_evento BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tipo_delito VARCHAR(100) NOT NULL,
+    geom_delito GEOMETRY(Point, 4326) NOT NULL,
+    fecha_ocurrencia TIMESTAMP NOT NULL
+);
+-- Índice espacial para renderizado rápido del mapa de calor
+CREATE INDEX idx_eventos_geom ON eventos_hotspots USING GIST(geom_delito);
+
+CREATE TABLE telemetria_activa (
+    id_telemetria BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id_sesion BIGINT NOT NULL REFERENCES sesiones_operativas(id_sesion),
+    geom_actual GEOMETRY(Point, 4326) NOT NULL,
+    timestamp_gps TIMESTAMP DEFAULT NOW()
+);
+-- Índice espacial para buscar rápidamente a la patrulla más cercana (algoritmo)
+CREATE INDEX idx_telemetria_geom ON telemetria_activa USING GIST(geom_actual);
+
+-- ==============================================================================
+-- CAPA DE LAZO CERRADO (MISIONES, TIEMPOS Y AUDITORÍA)
+-- ==============================================================================
+
+CREATE TABLE asignaciones_tacticas (
+    id_asignacion BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id_sesion BIGINT NOT NULL REFERENCES sesiones_operativas(id_sesion),
+    origen_asignacion VARCHAR(50) NOT NULL CHECK (origen_asignacion IN ('SISTEMA_AUTOMATICO', 'MANUAL_SUPERVISOR', 'REFUERZO_SOS')),
+    geom_destino GEOMETRY(Polygon, 4326) NOT NULL,
+    hora_despacho TIMESTAMP DEFAULT NOW(),
+    hora_ingreso_zona TIMESTAMP NULL,
+    hora_liberacion TIMESTAMP NULL,
+    estado_mision VARCHAR(50) DEFAULT 'PENDIENTE' CHECK (estado_mision IN ('PENDIENTE', 'PATRULLANDO', 'COMPLETADA', 'INCUMPLIDO_DESVIO', 'CANCELADA'))
+);
+CREATE INDEX idx_asignaciones_geom ON asignaciones_tacticas USING GIST(geom_destino);
+
+CREATE TABLE registro_evidencias (
+    id_evidencia BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id_sesion BIGINT NOT NULL REFERENCES sesiones_operativas(id_sesion),
+    id_asignacion BIGINT NULL REFERENCES asignaciones_tacticas(id_asignacion),
+    tipo_evidencia VARCHAR(50) NOT NULL CHECK (tipo_evidencia IN ('JUSTIFICACION_ATRASO', 'EVIDENCIA_BASICA', 'EVIDENCIA_IMPORTANTE')),
+    es_obligatoria BOOLEAN NOT NULL,
+    url_fotografia VARCHAR(255) NULL,
+    descripcion_texto TEXT NULL,
+    fecha_subida TIMESTAMP DEFAULT NOW()
+);
+
+-- ==============================================================================
+-- CAPA DE EMERGENCIAS (PROTOCOLO SOS)
+-- ==============================================================================
+
+CREATE TABLE alertas_emergencia (
+    id_emergencia BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id_sesion_solicitante BIGINT NOT NULL REFERENCES sesiones_operativas(id_sesion),
+    geom_emergencia GEOMETRY(Point, 4326) NOT NULL,
+    estado VARCHAR(30) DEFAULT 'ACTIVA' CHECK (estado IN ('ACTIVA', 'RESUELTA')),
+    fecha_alerta TIMESTAMP DEFAULT NOW()
+);
+CREATE INDEX idx_alertas_geom ON alertas_emergencia USING GIST(geom_emergencia);

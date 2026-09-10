@@ -1,0 +1,46 @@
+Definición del Proyecto
+S.I.G.O sistema inteligente de gestión operativa de lazo cerrado diseñado para automatizar y auditar el patrullaje preventivo policial. El sistema elimina la supervisión pasiva centralizando el despacho a través de un algoritmo espacial que envía unidades a zonas de calor (hotspots), fiscaliza sus tiempos de llegada y permanencia, y gestiona excepciones operativas mediante la carga de evidencias digitales en terreno.
+Objetivos del Sistema
+Objetivo General Desarrollar un sistema integral de despacho, monitoreo y auditoría táctica en tiempo real, utilizando telemetría de baja latencia (MQTT) y algoritmos espaciales para optimizar la cobertura dinámica de zonas de riesgo y garantizar el cumplimiento operativo de las unidades en terreno.
+Objetivos Específicos
+•	Implementar un motor de renderizado de mapas de calor dinámicos que se actualice cíclicamente (cada 1 hora) y aplique penalizaciones espaciales para garantizar la rotación territorial.
+•	Automatizar la asignación de patrullas disponibles hacia focos delictuales basándose en proximidad espacial (ST_Distance) y tiempo de inactividad.
+•	Ejecutar un control de Lazo Cerrado mediante Geofencing, exigiendo la llegada al punto en un máximo de 20 minutos y una permanencia de fiscalización de 45 a 60 minutos.
+•	Integrar un protocolo SOS de enjambre que redirija automáticamente a las unidades más cercanas al detectar una alerta de emergencia de un funcionario.
+Stack Tecnológico
+•	Frontend Web (Dashboard): Angular 18+ con Google Maps JavaScript API (v3.64).
+•	Frontend Móvil (App en Terreno): React Native / Expo Go.
+•	Backend & API: Node.js + Express. Arquitectura híbrida orientada a servicios.
+•	Protocolo Transaccional: REST APIs para operaciones CRUD, autenticación, carga de imágenes y cambio de estados.
+•	Protocolo de Telemetría (Real-Time): MQTT (Message Queuing Telemetry Transport) exclusivamente para la ingesta de coordenadas GPS de alta frecuencia y baja latencia.
+•	Base de Datos & Storage: Supabase (PostgreSQL 15+ con extensión PostGIS e indexación GiST) y Supabase Storage para multimedia.
+Lógica Operativa y Flujos del Sistema
+1. Autenticación y Gestión de Tripulación (App Móvil)
+•	El funcionario inicia sesión con RUT y contraseña.
+•	Antes de activar la telemetría, el usuario selecciona el Tipo de Transporte (Patrulla, Moto, Bicicleta).
+•	Si selecciona "Patrulla", el sistema permite asociar el RUT de 1 o 2 compañeros de tripulación. Solo el dispositivo físico del conductor (la SIMcard principal) transmite telemetría MQTT, pero el sistema vincula a toda la tripulación a ese sector y asignación.
+2. Algoritmo de Lazo Cerrado y Temporizadores
+•	Asignación Automática: El sistema detecta una patrulla DISPONIBLE y le asigna el hotspot más cercano no visitado recientemente. El estado cambia a EN_RUTA_HOTSPOT.
+•	SLA de Llegada (20 minutos): PostGIS evalúa las tramas MQTT entrantes. Si en 20 minutos la unidad no ingresa a la geocerca, el estado pasa a INCUMPLIDO_DESVIO. La app exige subir una foto y descripción textual obligatoria (JUSTIFICACION_ATRASO) para desbloquear la sesión.
+•	Tiempo de Permanencia (45-60 minutos): Al ingresar a la zona, el estado cambia a PATRULLANDO_ZONA. Cumplido el tiempo, el sistema marca la misión como COMPLETADA, penaliza temporalmente la zona para forzar rotación, y devuelve a la unidad al estado DISPONIBLE.
+•	Aportes en Terreno: Durante la fase de patrullaje, los funcionarios pueden subir fotografías opcionales catalogadas como EVIDENCIA_BASICA o EVIDENCIA_IMPORTANTE.
+3. Protocolo SOS y Refuerzos Automáticos
+•	Un funcionario presiona el botón de refuerzos en la App.
+•	El sistema intercepta la coordenada, cambia el estado del solicitante, e identifica mediante PostGIS las SIMs DISPONIBLE o PATRULLANDO_ZONA más cercanas.
+•	Las unidades cercanas son reasignadas automáticamente con estado OCUPADO_EMERGENCIA, el ruteo cambia hacia el punto SOS, y se dispara una alerta crítica en el Dashboard del supervisor.
+4. Consola de Mando (Dashboard Web)
+•	Visualización de SIMcards activas (con detalle de tripulación, tipo de vehículo y estado actual).
+•	Toggle interactivo para encender/apagar capas: Mapas de Calor, Puntos de Control, SIMcards activas/inactivas.
+•	Override Manual: El supervisor puede seleccionar una SIMcard y enviarla a una coordenada específica, anulando temporalmente el algoritmo automático (estado MANUAL_SUPERVISOR).
+•	Bandeja de reportes para revisar las justificaciones de atraso con sus respectivas evidencias fotográficas.
+Estructura de Base de Datos (PostGIS Relacional)
+El desarrollo debe consumir el esquema relacional definido para la persistencia espacial:
+•	usuarios: Credenciales y roles.
+•	sesiones_operativas: Control del vehículo, IMEI y estado de la máquina de estados.
+•	tripulacion_sesion: Relación de acompañantes en el mismo vehículo.
+•	eventos_hotspots: Puntos con GEOMETRY(Point, 4326) para generar el mapa de calor cíclico.
+•	telemetria_activa: Ingresa vía broker MQTT, indexada con GiST para geolocalización en tiempo real.
+•	asignaciones_tacticas: Polígonos de destino GEOMETRY(Polygon, 4326) con timestamps de despacho, ingreso y liberación.
+•	registro_evidencias: URL de Supabase Storage para justificaciones o inteligencia táctica.
+•	alertas_emergencia: Registro georreferenciado de eventos SOS activos o resueltos.
+
