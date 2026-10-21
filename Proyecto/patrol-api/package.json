@@ -35,5 +35,8 @@
     "@types/uuid": "^10.0.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.5.0"
-  }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }

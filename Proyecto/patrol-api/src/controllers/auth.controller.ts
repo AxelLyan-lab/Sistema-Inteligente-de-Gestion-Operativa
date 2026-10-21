@@ -34,6 +34,26 @@ export async function patrolLogin(
 
     console.log('[LOGIN ATTEMPT]', { rut, tipo_transporte, identificador_unidad });
 
+    // Validar límite de acompañantes según tipo de transporte:
+    // Radio Patrulla: máx 2 acompañantes. Moto, Bici, Infantería: 0 acompañantes.
+    if (tripulacion && Array.isArray(tripulacion)) {
+      const activeTrip = tripulacion.filter((r: any) => typeof r === 'string' && r.trim().length > 0);
+      if (tipo_transporte !== 'PATRULLA' && activeTrip.length > 0) {
+        res.status(400).json({
+          error: `El medio de transporte ${tipo_transporte} opera de manera individual (sin acompañantes).`,
+          code: 'TRANSPORT_NO_COMPANIONS',
+        } as any);
+        return;
+      }
+      if (tipo_transporte === 'PATRULLA' && activeTrip.length > 2) {
+        res.status(400).json({
+          error: 'Radio Patrulla permite un límite máximo de 2 acompañantes.',
+          code: 'PATROL_MAX_COMPANIONS',
+        } as any);
+        return;
+      }
+    }
+
     // ── 2. Buscar funcionario en base de datos ──────────────────────────────
     const { data: usuario, error: userError } = await supabaseAdmin
       .from('usuarios')

@@ -113,3 +113,26 @@ export async function getMe() {
   const { data } = await apiClient.get('/auth/me');
   return data;
 }
+
+/**
+ * Valida que el token almacenado sea todavía válido en el servidor.
+ * Retorna true si el servidor responde 200, false si responde 401/403/error.
+ */
+export async function validateToken(token: string): Promise<boolean> {
+  try {
+    await apiClient.get('/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Limpia el SecureStore (se usa cuando el token expiró)
+ */
+export async function clearStoredSession(): Promise<void> {
+  await SecureStore.deleteItemAsync(TOKEN_KEY);
+  await SecureStore.deleteItemAsync(SESSION_KEY);
+}

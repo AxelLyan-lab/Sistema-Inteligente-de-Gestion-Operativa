@@ -12,19 +12,22 @@ import {
   Animated,
   StatusBar,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { verifyCredentials, validateCompanion, getVehicles } from '../services/auth.service';
-import { Colors, Spacing, BorderRadius, Fonts, Shadow } from '../theme';
+import { Spacing, BorderRadius, Fonts, ThemeColors } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
+import Icon, { IconName } from '../components/Icon';
 import { TipoTransporte, Funcionario } from '../types';
 
 // ─── Opciones de tipo de patrullaje ─────────────────────────────────────────
-const TRANSPORT_OPTIONS: { label: string; value: TipoTransporte; icon: string; desc: string }[] = [
-  { label: 'Radio Patrulla', value: 'PATRULLA', icon: '🚔', desc: 'Auto / Móvil' },
-  { label: 'Moto', value: 'MOTO', icon: '🏍️', desc: 'Motocicleta' },
-  { label: 'Bicicleta', value: 'BICICLETA', icon: '🚲', desc: 'Ciclo patrulla' },
-  { label: 'Infantería', value: 'INFANTERIA', icon: '🚶', desc: 'A pie / Peatonal' },
+const TRANSPORT_OPTIONS: { label: string; value: TipoTransporte; icon: IconName; desc: string }[] = [
+  { label: 'Radio Patrulla', value: 'PATRULLA', icon: 'auto', desc: 'Auto / Móvil' },
+  { label: 'Moto', value: 'MOTO', icon: 'moto', desc: 'Motocicleta' },
+  { label: 'Bicicleta', value: 'BICICLETA', icon: 'bici', desc: 'Ciclo patrulla' },
+  { label: 'Infantería', value: 'INFANTERIA', icon: 'peaton', desc: 'A pie / Peatonal' },
 ];
 
 const DEFAULT_UNITS: Record<TipoTransporte, string[]> = {
@@ -47,6 +50,8 @@ interface CompanionItem {
  */
 export default function LoginScreen() {
   const { login } = useAuth();
+  const { Colors, isDark } = useTheme();
+  const styles = useThemedStyles(makeStyles);
 
   // Paso actual (1: Credenciales, 2: Configuración de Turno)
   const [step, setStep] = useState<1 | 2>(1);
@@ -73,6 +78,11 @@ export default function LoginScreen() {
     setUnitSuggestions(DEFAULT_UNITS[tipoTransporte] ?? []);
     if (DEFAULT_UNITS[tipoTransporte]?.length > 0) {
       setIdentificadorUnidad(DEFAULT_UNITS[tipoTransporte][0]);
+    }
+    // Si no es Radio Patrulla, vaciar acompañantes (Moto, Bici, Infantería operan solos)
+    if (tipoTransporte !== 'PATRULLA') {
+      setCompanions([]);
+      setCompanionRut('');
     }
   }, [tipoTransporte]);
 
@@ -101,10 +111,17 @@ export default function LoginScreen() {
       setStep(2);
     } catch (err: any) {
       shakeForm();
-      const message =
-        err?.response?.data?.error ??
-        'No se pudo verificar la identidad. Comprueba tu RUT y clave.';
-      Alert.alert('Error de Identificación', message);
+      if (!err?.response) {
+        Alert.alert(
+          'Sin conexión con el servidor',
+          'No se pudo contactar al servidor S.I.G.O. Revisa tu conexión a internet e inténtalo nuevamente.'
+        );
+      } else {
+        Alert.alert(
+          'Error de Identificación',
+          err.response.data?.error ?? 'No se pudo verificar la identidad. Comprueba tu RUT y clave.'
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -112,6 +129,16 @@ export default function LoginScreen() {
 
   // ── PASO 2: Validar y agregar compañero libre ─────────────────────────────
   const handleAddCompanion = async () => {
+    if (tipoTransporte !== 'PATRULLA') {
+      Alert.alert('Medio Individual', 'Moto, Bicicleta e Infantería operan con 1 solo funcionario (sin acompañantes).');
+      return;
+    }
+
+    if (companions.length >= 2) {
+      Alert.alert('Límite de Dotación', 'Radio Patrulla admite un máximo de 2 acompañantes (dotación total: 3 funcionarios).');
+      return;
+    }
+
     const compRut = companionRut.trim();
     if (!compRut) {
       Alert.alert('Atención', 'Ingresa el RUT del compañero que deseas sumar al turno.');
@@ -173,9 +200,9 @@ export default function LoginScreen() {
       });
     } catch (err: any) {
       shakeForm();
-      const message =
-        err?.response?.data?.error ??
-        'Error al iniciar el turno operativo. Intenta nuevamente.';
+      const message = !err?.response
+        ? 'No se pudo contactar al servidor S.I.G.O. Revisa tu conexión a internet.'
+        : err.response.data?.error ?? 'Error al iniciar el turno operativo. Intenta nuevamente.';
       Alert.alert('Error de Despliegue', message);
     } finally {
       setLoading(false);
@@ -196,12 +223,16 @@ export default function LoginScreen() {
         >
           {/* ── Header Táctico ────────────────────────────────── */}
           <View style={styles.header}>
-            <Text style={styles.logo}>🛡️</Text>
+            <Image
+              source={require('../../assets/logo-carabineros.webp')}
+              style={{ width: 96, height: 96, marginBottom: 12 }}
+              resizeMode="contain"
+            />
             <Text style={styles.title}>S.I.G.O.</Text>
             <Text style={styles.subtitle}>Sistema Inteligente de Gestión Operativa</Text>
             <View style={styles.badge}>
               <Text style={styles.badgeText}>
-                {step === 1 ? '● PASO 1: IDENTIFICACIÓN' : '● PASO 2: ASIGNACIÓN DE TURNO'}
+                {step === 1 ? 'PASO 1 · IDENTIFICACIÓN' : 'PASO 2 · ASIGNACIÓN DE TURNO'}
               </Text>
             </View>
           </View>
@@ -220,7 +251,10 @@ export default function LoginScreen() {
 
                 {/* RUT */}
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>🪪 RUT de Funcionario</Text>
+                  <View style={styles.labelRow}>
+                    <Icon name="id" size={16} color={Colors.textSecondary} />
+                    <Text style={styles.fieldLabel}>RUT de funcionario</Text>
+                  </View>
                   <TextInput
                     style={styles.input}
                     placeholder="Ej: 15678912-3"
@@ -235,7 +269,10 @@ export default function LoginScreen() {
 
                 {/* Clave / PIN */}
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>🔐 Contraseña / PIN Táctico</Text>
+                  <View style={styles.labelRow}>
+                    <Icon name="candado" size={16} color={Colors.textSecondary} />
+                    <Text style={styles.fieldLabel}>Contraseña / PIN</Text>
+                  </View>
                   <View style={styles.passwordRow}>
                     <TextInput
                       style={[styles.input, styles.passwordInput]}
@@ -251,7 +288,7 @@ export default function LoginScreen() {
                       style={styles.eyeBtn}
                       onPress={() => setShowPin(p => !p)}
                     >
-                      <Text style={styles.eyeIcon}>{showPin ? '🙈' : '👁️'}</Text>
+                      <Icon name={showPin ? 'ojoOculto' : 'ojo'} size={20} color={Colors.textSecondary} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -268,7 +305,7 @@ export default function LoginScreen() {
                   ) : (
                     <>
                       <Text style={styles.loginBtnText}>VERIFICAR IDENTIDAD</Text>
-                      <Text style={styles.loginBtnIcon}>➔</Text>
+                      <Icon name="flecha" size={18} color={Colors.onPrimary} />
                     </>
                   )}
                 </TouchableOpacity>
@@ -308,7 +345,11 @@ export default function LoginScreen() {
                       onPress={() => setTipoTransporte(opt.value)}
                       disabled={loading}
                     >
-                      <Text style={styles.transportIcon}>{opt.icon}</Text>
+                      <Icon
+                        name={opt.icon}
+                        size={28}
+                        color={tipoTransporte === opt.value ? Colors.primary : Colors.textSecondary}
+                      />
                       <Text
                         style={[
                           styles.transportLabel,
@@ -324,7 +365,10 @@ export default function LoginScreen() {
 
                 {/* Identificador de unidad */}
                 <View style={[styles.fieldGroup, { marginTop: Spacing.lg }]}>
-                  <Text style={styles.fieldLabel}>🚓 Identificador de Unidad Asignada</Text>
+                  <View style={styles.labelRow}>
+                    <Icon name="auto" size={16} color={Colors.textSecondary} />
+                    <Text style={styles.fieldLabel}>Identificador de unidad asignada</Text>
+                  </View>
                   {/* Sugerencias rápidas */}
                   <View style={styles.suggestionRow}>
                     {unitSuggestions.map(u => (
@@ -361,43 +405,69 @@ export default function LoginScreen() {
 
                 {/* Dotación: Agregar compañero libre */}
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>👥 Sumar Compañero de Dotación (Opcional)</Text>
-                  <Text style={styles.fieldHelp}>
-                    Solo se pueden incorporar funcionarios que no tengan una sesión activa.
-                  </Text>
-
-                  <View style={styles.companionInputRow}>
-                    <TextInput
-                      style={[styles.input, styles.companionInput]}
-                      placeholder="RUT Compañero (Ej: 18345672-K)"
-                      placeholderTextColor={Colors.textMuted}
-                      value={companionRut}
-                      onChangeText={setCompanionRut}
-                      autoCapitalize="none"
-                      editable={!validatingCompanion && !loading}
-                    />
-                    <TouchableOpacity
-                      style={[
-                        styles.addCompanionBtn,
-                        validatingCompanion && styles.loginBtnDisabled,
-                      ]}
-                      onPress={handleAddCompanion}
-                      disabled={validatingCompanion || loading}
-                    >
-                      {validatingCompanion ? (
-                        <ActivityIndicator color={Colors.textWhite} size="small" />
-                      ) : (
-                        <Text style={styles.addCompanionBtnText}>+ Sumar</Text>
-                      )}
-                    </TouchableOpacity>
+                  <View style={styles.labelRow}>
+                    <Icon name="grupo" size={16} color={Colors.textSecondary} />
+                    <Text style={styles.fieldLabel}>
+                      Dotación de Turno {tipoTransporte === 'PATRULLA' ? `(${companions.length}/2 acompañantes)` : '(Individual)'}
+                    </Text>
                   </View>
+
+                  {tipoTransporte !== 'PATRULLA' ? (
+                    <View style={[styles.companionList, { backgroundColor: Colors.surface, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border }]}>
+                      <Text style={{ fontSize: 12, color: Colors.textSecondary, lineHeight: 18 }}>
+                        ℹ️ <Text style={{ fontWeight: 'bold' }}>Transporte individual:</Text> {tipoTransporte === 'MOTO' ? 'Moto' : tipoTransporte === 'BICICLETA' ? 'Bicicleta' : 'Infantería'} opera con 1 solo funcionario (sin acompañantes).
+                      </Text>
+                    </View>
+                  ) : (
+                    <>
+                      <Text style={styles.fieldHelp}>
+                        Radio Patrulla permite sumar hasta 2 compañeros disponibles que no tengan sesión activa.
+                      </Text>
+
+                      {companions.length < 2 && (
+                        <View style={styles.companionInputRow}>
+                          <TextInput
+                            style={[styles.input, styles.companionInput]}
+                            placeholder="RUT Compañero (Ej: 18345672-K)"
+                            placeholderTextColor={Colors.textMuted}
+                            value={companionRut}
+                            onChangeText={setCompanionRut}
+                            autoCapitalize="none"
+                            editable={!validatingCompanion && !loading}
+                          />
+                          <TouchableOpacity
+                            style={[
+                              styles.addCompanionBtn,
+                              validatingCompanion && styles.loginBtnDisabled,
+                            ]}
+                            onPress={handleAddCompanion}
+                            disabled={validatingCompanion || loading}
+                          >
+                            {validatingCompanion ? (
+                              <ActivityIndicator color={Colors.textWhite} size="small" />
+                            ) : (
+                              <Text style={styles.addCompanionBtnText}>Sumar</Text>
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {companions.length >= 2 && (
+                        <View style={{ paddingVertical: 6 }}>
+                          <Text style={{ fontSize: 11, color: Colors.warning, fontWeight: '600' }}>
+                            ✓ Capacidad máxima alcanzada (2 acompañantes + 1 conductor = 3 funcionarios).
+                          </Text>
+                        </View>
+                      )}
+                    </>
+                  )}
 
                   {/* Lista de compañeros sumados */}
                   {companions.length > 0 && (
                     <View style={styles.companionList}>
                       {companions.map(comp => (
                         <View key={comp.rut} style={styles.companionChip}>
-                          <Text style={styles.companionChipIcon}>👮</Text>
+                          <Icon name="perfil" size={18} color={Colors.primary} />
                           <View style={{ flex: 1 }}>
                             <Text style={styles.companionChipName}>
                               {comp.grado_cargo ? `${comp.grado_cargo} ` : ''}{comp.nombre_completo}
@@ -408,7 +478,7 @@ export default function LoginScreen() {
                             style={styles.removeCompanionBtn}
                             onPress={() => handleRemoveCompanion(comp.rut)}
                           >
-                            <Text style={styles.removeCompanionText}>✕</Text>
+                            <Icon name="cerrar" size={16} color={Colors.danger} />
                           </TouchableOpacity>
                         </View>
                       ))}
@@ -427,7 +497,7 @@ export default function LoginScreen() {
                     <ActivityIndicator color={Colors.textWhite} size="small" />
                   ) : (
                     <>
-                      <Text style={styles.loginBtnIcon}>🚀</Text>
+                      <Icon name="flecha" size={18} color={Colors.onPrimary} />
                       <Text style={styles.loginBtnText}>INICIAR PATRULLAJE</Text>
                     </>
                   )}
@@ -439,13 +509,13 @@ export default function LoginScreen() {
                   onPress={() => setStep(1)}
                   disabled={loading}
                 >
-                  <Text style={styles.backBtnText}>⬅ Cambiar Funcionario</Text>
+                  <Text style={styles.backBtnText}>Cambiar funcionario</Text>
                 </TouchableOpacity>
               </>
             )}
 
             <Text style={styles.footerNote}>
-              🔒 Acceso reservado exclusivamente a personal operativo en terreno S.I.G.O.
+              Acceso reservado exclusivamente a personal operativo en terreno S.I.G.O.
             </Text>
           </Animated.View>
         </ScrollView>
@@ -454,7 +524,7 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (Colors: ThemeColors) => StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.backgroundDark },
   scroll: { flexGrow: 1, paddingBottom: Spacing.xxl },
 
@@ -466,49 +536,57 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
     alignItems: 'center',
   },
-  logo: { fontSize: 48, marginBottom: Spacing.xs },
+  logoWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.sm,
+  },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: Spacing.xs },
   title: {
-    fontSize: 32,
-    fontWeight: '900',
+    fontSize: 30,
+    fontWeight: '600',
     color: Colors.textWhite,
-    letterSpacing: 5,
+    letterSpacing: 6,
   },
   subtitle: {
     fontSize: Fonts.sizes.xs,
-    color: '#94A3B8',
+    color: 'rgba(255,255,255,0.7)',
     marginTop: Spacing.xs,
     textAlign: 'center',
     letterSpacing: 0.5,
   },
   badge: {
     marginTop: Spacing.md,
-    backgroundColor: 'rgba(229,62,62,0.15)',
     borderWidth: 1,
-    borderColor: Colors.danger,
+    borderColor: 'rgba(255,255,255,0.4)',
     borderRadius: BorderRadius.full,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.xs,
   },
   badgeText: {
-    color: Colors.danger,
+    color: Colors.textWhite,
     fontSize: Fonts.sizes.xs,
-    fontWeight: '700',
+    fontWeight: '500',
     letterSpacing: 1.5,
   },
 
   // ── Formulario ───────────────────────────────────────────
   formCard: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     padding: Spacing.xl,
     paddingTop: Spacing.xl,
     flex: 1,
-    ...Shadow.lg,
   },
   stepTitle: {
     fontSize: Fonts.sizes.lg,
-    fontWeight: '800',
+    fontWeight: '600',
     color: Colors.textPrimary,
     marginBottom: Spacing.xs,
   },
@@ -520,7 +598,7 @@ const styles = StyleSheet.create({
   },
   sectionHeader: {
     fontSize: Fonts.sizes.sm,
-    fontWeight: '800',
+    fontWeight: '600',
     color: Colors.textPrimary,
     marginBottom: Spacing.sm,
     letterSpacing: 0.2,
@@ -528,10 +606,9 @@ const styles = StyleSheet.create({
   fieldGroup: { marginBottom: Spacing.lg },
   fieldLabel: {
     fontSize: Fonts.sizes.sm,
-    fontWeight: '700',
+    fontWeight: '500',
     color: Colors.textPrimary,
-    marginBottom: Spacing.xs,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   fieldHelp: {
     fontSize: Fonts.sizes.xs,
@@ -545,9 +622,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     fontSize: Fonts.sizes.md,
     color: Colors.textPrimary,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: Colors.border,
-    fontWeight: '500',
+    fontWeight: '400',
   },
   passwordRow: { flexDirection: 'row', alignItems: 'center' },
   passwordInput: { flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 },
@@ -557,7 +634,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.inputBackground,
     borderTopRightRadius: BorderRadius.md,
     borderBottomRightRadius: BorderRadius.md,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderLeftWidth: 0,
     borderColor: Colors.border,
     justifyContent: 'center',
@@ -569,9 +646,9 @@ const styles = StyleSheet.create({
   officerCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0FFF4',
-    borderColor: '#38A169',
-    borderWidth: 1.5,
+    backgroundColor: Colors.primarySoft,
+    borderColor: Colors.primary,
+    borderWidth: 1,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     marginBottom: Spacing.lg,
@@ -581,24 +658,24 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#38A169',
+    backgroundColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   officerAvatarText: {
-    color: '#FFF',
+    color: Colors.onPrimary,
     fontSize: 20,
-    fontWeight: '900',
+    fontWeight: '500',
   },
   officerTitle: {
     fontSize: Fonts.sizes.xs,
-    fontWeight: '700',
-    color: '#276749',
+    fontWeight: '600',
+    color: Colors.primary,
     letterSpacing: 0.5,
   },
   officerNameText: {
     fontSize: Fonts.sizes.md,
-    fontWeight: '800',
+    fontWeight: '600',
     color: Colors.textPrimary,
   },
   officerRutText: {
@@ -618,18 +695,17 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     padding: Spacing.md,
     alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: Colors.border,
-    ...Shadow.sm,
   },
   transportCardActive: {
     borderColor: Colors.primary,
-    backgroundColor: '#EBF4FF',
+    backgroundColor: Colors.primarySoft,
   },
-  transportIcon: { fontSize: 26, marginBottom: 4 },
   transportLabel: {
     fontSize: Fonts.sizes.xs,
-    fontWeight: '800',
+    fontWeight: '600',
+    marginTop: 6,
     color: Colors.textSecondary,
     textAlign: 'center',
   },
@@ -665,7 +741,7 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   suggestionTextActive: {
-    color: Colors.textWhite,
+    color: Colors.onPrimary,
   },
 
   // ── Acompañante ──────────────────────────────────────────
@@ -686,9 +762,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   addCompanionBtnText: {
-    color: Colors.textWhite,
+    color: Colors.onPrimary,
     fontSize: Fonts.sizes.sm,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   companionList: {
     marginTop: Spacing.sm,
@@ -697,7 +773,7 @@ const styles = StyleSheet.create({
   companionChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.surface,
     borderColor: Colors.border,
     borderWidth: 1,
     borderRadius: BorderRadius.md,
@@ -725,34 +801,31 @@ const styles = StyleSheet.create({
 
   // ── Botones Principales ──────────────────────────────────
   loginBtn: {
-    height: 56,
-    backgroundColor: Colors.danger,
-    borderRadius: BorderRadius.lg,
+    height: 54,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
     marginTop: Spacing.md,
-    ...Shadow.lg,
   },
   deployBtn: {
-    height: 58,
-    backgroundColor: '#2E7D32', // Verde táctico de despliegue
-    borderRadius: BorderRadius.lg,
+    height: 54,
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.md,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
     marginTop: Spacing.md,
-    ...Shadow.lg,
   },
   loginBtnDisabled: { opacity: 0.6 },
-  loginBtnIcon: { fontSize: 20 },
   loginBtnText: {
-    color: Colors.textWhite,
+    color: Colors.onPrimary,
     fontSize: Fonts.sizes.md,
-    fontWeight: '900',
-    letterSpacing: 0.5,
+    fontWeight: '600',
+    letterSpacing: 0.8,
   },
   backBtn: {
     paddingVertical: Spacing.md,

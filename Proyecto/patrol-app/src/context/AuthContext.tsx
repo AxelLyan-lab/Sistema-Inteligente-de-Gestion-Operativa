@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { getStoredSession, patrolLogin as loginService, patrolLogout as logoutService } from '../services/auth.service';
+import { getStoredSession, patrolLogin as loginService, patrolLogout as logoutService, validateToken, clearStoredSession } from '../services/auth.service';
 import { AuthState, LoginForm, Funcionario, SesionOperativa } from '../types';
 
 interface AuthContextType extends AuthState {
@@ -25,14 +25,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const stored = await getStoredSession();
         if (stored) {
-          setState({
-            token: stored.token,
-            patrol_id: stored.patrol_id,
-            funcionario: stored.funcionario,
-            sesion: stored.sesion,
-            isLoading: false,
-            isAuthenticated: true,
-          });
+          // Validar que el token siga vigente antes de restaurar la sesión
+          const isValid = await validateToken(stored.token);
+          if (isValid) {
+            setState({
+              token: stored.token,
+              patrol_id: stored.patrol_id,
+              funcionario: stored.funcionario,
+              sesion: stored.sesion,
+              isLoading: false,
+              isAuthenticated: true,
+            });
+          } else {
+            // Token expirado — limpiar y forzar re-login
+            await clearStoredSession();
+            setState(prev => ({ ...prev, isLoading: false }));
+          }
         } else {
           setState(prev => ({ ...prev, isLoading: false }));
         }

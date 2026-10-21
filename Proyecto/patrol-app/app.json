@@ -11,7 +11,9 @@
       "resizeMode": "contain",
       "backgroundColor": "#1A1A2E"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "cl.sigo.patrolapp",
@@ -61,10 +63,11 @@
           "photosPermission": "S.I.G.O. Patrol accede a tus fotos para adjuntar evidencias.",
           "cameraPermission": "S.I.G.O. Patrol necesita la cámara para capturar evidencias."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "extra": {
-      "apiBaseUrl": "http://localhost:3000/api/v1",
+      "apiBaseUrl": "https://frequency-unknown-pay-aquatic.trycloudflare.com/api/v1",
       "supabaseUrl": "https://cjyrlgpnqkahhyqgyyvu.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqeXJsZ3BucWthaGh5cWd5eXZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4NDI4MjQsImV4cCI6MjEwMzQxODgyNH0.bWBsBriCLAUnTQMG1DXSaDzJDMXauoNFuK2ZdwiC3hA"
     }

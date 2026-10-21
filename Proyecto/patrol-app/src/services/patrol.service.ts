@@ -34,3 +34,60 @@ export async function sendTelemetry(coords: Coordenadas) {
   });
   return data;
 }
+
+// ── Misión asignada por el supervisor ────────────────────────────────────────
+export interface AsignacionMision {
+  id_asignacion: number;
+  origen_asignacion: string;
+  estado_mision: string;
+  hora_despacho: string;
+  hora_ingreso_zona: string | null;
+  centro_lat: number;
+  centro_lng: number;
+  radio_m: number;
+  nombre_zona: string | null;
+  instrucciones: string | null;
+}
+
+export async function getActiveAssignment(): Promise<AsignacionMision | null> {
+  const { data } = await apiClient.get('/patrol/assignment');
+  return data.asignacion ?? null;
+}
+
+export async function markAssignmentArrived(id_asignacion: number) {
+  const { data } = await apiClient.post('/patrol/assignment/arrived', { id_asignacion });
+  return data;
+}
+
+// ── Mensajería con la central ────────────────────────────────────────────────
+export interface MensajeChat {
+  id_mensaje: number;
+  remitente: 'SUPERVISOR' | 'FUNCIONARIO';
+  texto: string;
+  fecha: string;
+  leido: boolean;
+}
+
+export async function getMessages(): Promise<MensajeChat[]> {
+  const { data } = await apiClient.get('/patrol/messages');
+  return data.mensajes ?? [];
+}
+
+export async function sendMessage(texto: string) {
+  const { data } = await apiClient.post('/patrol/message', { texto });
+  return data;
+}
+
+export async function sendAudioMessage(audioUri: string) {
+  const formData = new FormData();
+  formData.append('audio', {
+    uri: audioUri,
+    type: 'audio/mp4',
+    name: `audio_${Date.now()}.m4a`,
+  } as any);
+
+  const { data } = await apiClient.post('/patrol/message/audio', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}

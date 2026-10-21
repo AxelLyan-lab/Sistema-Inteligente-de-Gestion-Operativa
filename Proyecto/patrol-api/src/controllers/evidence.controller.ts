@@ -38,11 +38,24 @@ export async function uploadEvidence(
       }
     }
 
+    // Vincular a la misión activa (si existe)
+    const { data: asignacion } = await supabaseAdmin
+      .from('asignaciones_tacticas')
+      .select('id_asignacion')
+      .eq('id_sesion', patrol_id)
+      .not('estado_mision', 'in', '("COMPLETADA","CANCELADA")')
+      .order('hora_despacho', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
     // Registrar evidencia en la base de datos
     const { data, error } = await supabaseAdmin
       .from('registro_evidencias')
       .insert({
         id_sesion: patrol_id,
+        id_asignacion: asignacion?.id_asignacion ?? null,
+        origen: 'MOVIL',
+        subido_por: req.tacticalUser!.nombre,
         tipo_evidencia: tipo_evidencia ?? 'EVIDENCIA_BASICA',
         es_obligatoria: false,
         url_fotografia,

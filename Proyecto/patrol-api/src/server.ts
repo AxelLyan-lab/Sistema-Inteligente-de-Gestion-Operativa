@@ -15,15 +15,26 @@ import morgan from 'morgan';
 import { authRouter } from './routes/auth.routes';
 import { patrolRouter } from './routes/patrol.routes';
 import { evidenceRouter } from './routes/evidence.routes';
+import { sesionesRouter } from './routes/sesiones.routes';
 import { errorHandler } from './middleware/error.middleware';
+import { startSessionSweeper } from './utils/sessionSweeper';
 
 const app = express();
 const PORT = process.env.PORT ?? 3000;
 
 // ── Seguridad y utilidades ────────────────────────────────
 app.use(helmet());
+const allowedOrigins = process.env.NODE_ENV === 'development'
+  ? true
+  : (process.env.CORS_ORIGIN
+      ? (process.env.CORS_ORIGIN.includes(',')
+          ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
+          : process.env.CORS_ORIGIN)
+      : '*');
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN ?? '*',
+  origin: allowedOrigins,
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
@@ -35,6 +46,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/patrol', patrolRouter);
 app.use('/api/v1/evidence', evidenceRouter);
+app.use('/api/v1/sesiones', sesionesRouter);
 
 // ── Health check ──────────────────────────────────────────
 app.get('/health', (_req, res) => {
@@ -47,6 +59,7 @@ app.use(errorHandler);
 app.listen(PORT, () => {
   console.log(`\n🚔 S.I.G.O. Patrol API corriendo en http://localhost:${PORT}`);
   console.log(`   Ambiente: ${process.env.NODE_ENV ?? 'development'}\n`);
+  startSessionSweeper();
 });
 
 export default app;

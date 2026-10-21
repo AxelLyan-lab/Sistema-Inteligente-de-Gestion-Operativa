@@ -73,6 +73,34 @@ export async function addCrewMember(
       return;
     }
 
+    // 0. Verificar tipo de transporte y límite de dotación
+    const { data: sesionActual } = await supabaseAdmin
+      .from('sesiones_operativas')
+      .select('id_sesion, tipo_transporte')
+      .eq('id_sesion', patrol_id)
+      .maybeSingle();
+
+    if (sesionActual && sesionActual.tipo_transporte !== 'PATRULLA') {
+      res.status(400).json({
+        error: `El medio de transporte ${sesionActual.tipo_transporte} opera de forma individual (sin acompañantes).`,
+        code: 'TRANSPORT_NO_COMPANIONS',
+      } as any);
+      return;
+    }
+
+    const { count: crewCount } = await supabaseAdmin
+      .from('tripulacion_sesion')
+      .select('*', { count: 'exact', head: true })
+      .eq('id_sesion', patrol_id);
+
+    if ((crewCount ?? 0) >= 2) {
+      res.status(400).json({
+        error: 'Radio Patrulla ya cuenta con el límite máximo de 2 acompañantes.',
+        code: 'CREW_LIMIT_REACHED',
+      } as any);
+      return;
+    }
+
     // 1. Verificar existencia y rol del funcionario
     const { data: usuario, error: userError } = await supabaseAdmin
       .from('usuarios')
@@ -205,23 +233,156 @@ export async function getCrew(
   }
 }
 
-// ── POST /api/v1/patrol/telemetry  — Enviar posición GPS ────────────────────
+// ── POST /api/v1/patrol/telemetry  — Ingestar ping GNSS completo ────────────
 export async function updateTelemetry(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   const { patrol_id } = req.tacticalUser!;
-  const { latitude, longitude } = req.body;
+  const {
+    latitude,
+    longitude,
+    altitude,        // metros sobre el nivel del mar
+    accuracy,        // precisión horizontal en metros
+    speed,           // velocidad en m/s → convertir a km/h
+    heading,         // rumbo en grados (0–360)
+    timestamp_gps,   // timestamp ISO del fix GNSS en el dispositivo
+  } = req.body;
 
   try {
-    await supabaseAdmin.from('telemetria_activa').insert({
-      id_sesion: patrol_id,
-      geom_actual: `SRID=4326;POINT(${longitude} ${latitude})`,
-      timestamp_gps: new Date().toISOString(),
+    if (latitude == null || longitude == null) {
+      res.status(400).json({ error: 'latitude y longitude son requeridos', code: 'NO_COORDS' });
+      return;
+    }
+
+    const velocidad_kmh = speed != null ? Math.round(speed * 3.6 * 10) / 10 : null;
+
+    // Retomar la sesión si fue cerrada automáticamente por inactividad
+    const { data: ses } = await supabaseAdmin
+      .from('sesiones_operativas')
+      .select('fecha_cierre, rut_conductor')
+      .eq('id_sesion', patrol_id)
+      .maybeSingle();
+    if (ses?.fecha_cierre) {
+      const { data: otra } = await supabaseAdmin
+        .from('sesiones_operativas')
+        .select('id_sesion')
+        .eq('rut_conductor', ses.rut_conductor)
+        .is('fecha_cierre', null)
+        .limit(1)
+        .maybeSingle();
+      if (!otra) {
+        const { data: asig } = await supabaseAdmin
+          .from('asignaciones_tacticas')
+          .select('estado_mision, hora_ingreso_zona')
+          .eq('id_sesion', patrol_id)
+          .not('estado_mision', 'in', '("COMPLETADA","CANCELADA")')
+          .order('hora_despacho', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const recoveredEstado = asig?.hora_ingreso_zona || asig?.estado_mision === 'PATRULLANDO'
+          ? 'PATRULLANDO_ZONA'
+          : asig ? 'EN_RUTA_HOTSPOT' : 'DISPONIBLE';
+
+        await supabaseAdmin
+          .from('sesiones_operativas')
+          .update({ fecha_cierre: null, estado_operativo: recoveredEstado })
+          .eq('id_sesion', patrol_id);
+      }
+    }
+
+    const { error } = await supabaseAdmin.from('telemetria_activa').insert({
+      id_sesion:     patrol_id,
+      geom_actual:   `SRID=4326;POINT(${longitude} ${latitude})`,
+      altitud_m:     altitude ?? null,
+      precision_m:   accuracy ?? null,
+      velocidad_kmh,
+      rumbo_grados:  heading ?? null,
+      timestamp_gps: timestamp_gps ?? new Date().toISOString(),
+      timestamp_srv: new Date().toISOString(),
     });
 
-    res.json({ message: 'Telemetría registrada', patrol_id, timestamp: new Date().toISOString() });
+    if (error) throw error;
+
+    // ── Detección Automática de Llegada a la Zona Asignada ──────────────────
+    try {
+      const { data: asignacionActiva } = await supabaseAdmin
+        .from('asignaciones_tacticas')
+        .select('id_asignacion, centro_lat, centro_lng, radio_m, estado_mision, hora_despacho, hora_ingreso_zona')
+        .eq('id_sesion', patrol_id)
+        .is('hora_ingreso_zona', null)
+        .not('estado_mision', 'in', '("COMPLETADA","CANCELADA")')
+        .order('hora_despacho', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (asignacionActiva && asignacionActiva.centro_lat != null && asignacionActiva.centro_lng != null) {
+        // Cálculo de distancia en metros (Haversine)
+        const R = 6371e3;
+        const φ1 = (latitude * Math.PI) / 180;
+        const φ2 = (Number(asignacionActiva.centro_lat) * Math.PI) / 180;
+        const Δφ = ((Number(asignacionActiva.centro_lat) - latitude) * Math.PI) / 180;
+        const Δλ = ((Number(asignacionActiva.centro_lng) - longitude) * Math.PI) / 180;
+        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                  Math.cos(φ1) * Math.cos(φ2) *
+                  Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        const distMetros = R * c;
+
+        // Radio exacto de la zona (mínimo 50m) con margen GPS de 20m
+        const radioTolerancia = Math.max(Number(asignacionActiva.radio_m) || 50, 50) + 20;
+
+        if (distMetros <= radioTolerancia) {
+          console.log(`[AUTOGEOFENCE] Sesión ${patrol_id} ingresó a zona asignada ${asignacionActiva.id_asignacion} (dist: ${Math.round(distMetros)}m <= ${radioTolerancia}m). Transicionando a PATRULLANDO_ZONA.`);
+          await supabaseAdmin
+            .from('asignaciones_tacticas')
+            .update({
+              estado_mision: 'PATRULLANDO',
+              hora_ingreso_zona: new Date().toISOString(),
+            })
+            .eq('id_asignacion', asignacionActiva.id_asignacion);
+
+          await supabaseAdmin
+            .from('sesiones_operativas')
+            .update({ estado_operativo: 'PATRULLANDO_ZONA' })
+            .eq('id_sesion', patrol_id);
+        }
+      }
+    } catch (geofenceErr) {
+      console.warn('[AUTOGEOFENCE] Error evaluando geocerca:', geofenceErr);
+    }
+
+    res.json({
+      ok: true,
+      patrol_id,
+      timestamp_srv: new Date().toISOString(),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ── GET /api/v1/patrol/telemetry/status  — Último ping registrado ────────────
+export async function getTelemetryStatus(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  const { patrol_id } = req.tacticalUser!;
+
+  try {
+    // Consultamos la vista que extrae lat/lon vía ST_Y / ST_X
+    const { data, error } = await supabaseAdmin
+      .from('v_posicion_actual_unidades')
+      .select('latitud, longitud, altitud_m, precision_m, velocidad_kmh, rumbo_grados, timestamp_gps, timestamp_srv')
+      .eq('id_sesion', patrol_id)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    res.json({ patrol_id, ultimo_ping: data ?? null });
   } catch (err) {
     next(err);
   }

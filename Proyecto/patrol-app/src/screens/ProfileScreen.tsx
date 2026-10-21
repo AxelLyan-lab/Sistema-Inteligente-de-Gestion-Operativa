@@ -7,41 +7,46 @@ import {
   Alert,
   ScrollView,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
-import { Colors, Spacing, BorderRadius, Fonts, Shadow } from '../theme';
+import { Spacing, BorderRadius, Fonts, ThemeColors } from '../theme';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
+import Icon, { IconName } from '../components/Icon';
 
-const TRANSPORT_ICONS: Record<string, string> = {
-  PATRULLA: '🚔',
-  MOTO: '🏍️',
-  BICICLETA: '🚲',
-  INFANTERIA: '🚶',
-};
-
-const ESTADO_COLORS: Record<string, string> = {
-  DISPONIBLE: Colors.stateDisponible,
-  EN_RUTA_HOTSPOT: Colors.stateEnRuta,
-  PATRULLANDO_ZONA: Colors.statePatrullando,
-  OCUPADO_EMERGENCIA: Colors.stateEmergencia,
-  INACTIVO: Colors.stateInactivo,
+const TRANSPORT_ICONS: Record<string, IconName> = {
+  PATRULLA: 'auto',
+  MOTO: 'moto',
+  BICICLETA: 'bici',
+  INFANTERIA: 'peaton',
 };
 
 /**
- * ProfileScreen — Perfil del funcionario con datos de turno y logout
+ * ProfileScreen — Perfil del funcionario, apariencia y cierre de turno
  */
 export default function ProfileScreen() {
   const { funcionario, sesion, patrol_id, logout } = useAuth();
+  const { Colors, isDark, setMode } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [loggingOut, setLoggingOut] = useState(false);
+
+  const ESTADO_COLORS: Record<string, string> = {
+    DISPONIBLE: Colors.stateDisponible,
+    EN_RUTA_HOTSPOT: Colors.stateEnRuta,
+    PATRULLANDO_ZONA: Colors.statePatrullando,
+    OCUPADO_EMERGENCIA: Colors.stateEmergencia,
+    INACTIVO: Colors.stateInactivo,
+  };
 
   const handleLogout = () => {
     Alert.alert(
-      '⚠️ Finalizar Turno',
+      'Finalizar turno',
       '¿Confirmas que deseas cerrar sesión y finalizar el turno operativo?',
       [
         { text: 'Cancelar', style: 'cancel' },
         {
-          text: 'Finalizar Turno',
+          text: 'Finalizar turno',
           style: 'destructive',
           onPress: async () => {
             setLoggingOut(true);
@@ -58,7 +63,7 @@ export default function ProfileScreen() {
   };
 
   const estadoColor = ESTADO_COLORS[sesion?.estado_operativo ?? 'DISPONIBLE'];
-  const transportIcon = TRANSPORT_ICONS[sesion?.tipo_transporte ?? 'PATRULLA'];
+  const transportIcon = TRANSPORT_ICONS[sesion?.tipo_transporte ?? 'PATRULLA'] ?? 'auto';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -73,7 +78,7 @@ export default function ProfileScreen() {
           </View>
           <Text style={styles.name}>{funcionario?.nombre_completo ?? 'Funcionario'}</Text>
           <Text style={styles.grade}>{funcionario?.grado_cargo ?? 'Oficial de Terreno'}</Text>
-          <View style={[styles.stateBadge, { backgroundColor: `${estadoColor}20`, borderColor: estadoColor }]}>
+          <View style={[styles.stateBadge, { borderColor: estadoColor }]}>
             <View style={[styles.stateDot, { backgroundColor: estadoColor }]} />
             <Text style={[styles.stateText, { color: estadoColor }]}>
               {sesion?.estado_operativo?.replace(/_/g, ' ') ?? 'DISPONIBLE'}
@@ -82,48 +87,69 @@ export default function ProfileScreen() {
         </View>
 
         {/* ── Datos del turno ────────────────────────────── */}
-        <Text style={styles.sectionTitle}>Turno Activo</Text>
-        <View style={styles.infoCard}>
-          <InfoRow icon="🪪" label="RUT / ID" value={funcionario?.rut ?? '—'} />
-          <Divider />
-          <InfoRow icon="📋" label="ID Sesión" value={`#${patrol_id}`} />
-          <Divider />
+        <Text style={styles.sectionTitle}>Turno activo</Text>
+        <View style={styles.card}>
+          <InfoRow styles={styles} color={Colors.textSecondary} icon="id" label="RUT / ID" value={funcionario?.rut ?? '—'} />
+          <View style={styles.divider} />
+          <InfoRow styles={styles} color={Colors.textSecondary} icon="lista" label="ID sesión" value={`#${patrol_id}`} />
+          <View style={styles.divider} />
           <InfoRow
+            styles={styles}
+            color={Colors.textSecondary}
             icon={transportIcon}
             label="Unidad"
             value={sesion?.identificador_unidad ?? '—'}
           />
-          <Divider />
+          <View style={styles.divider} />
           <InfoRow
-            icon="🚓"
-            label="Tipo Transporte"
+            styles={styles}
+            color={Colors.textSecondary}
+            icon="inicio"
+            label="Tipo de transporte"
             value={sesion?.tipo_transporte?.replace('_', ' ') ?? '—'}
           />
-          <Divider />
+          <View style={styles.divider} />
           <InfoRow
-            icon="🕐"
-            label="Inicio de Turno"
-            value={
-              sesion?.fecha_inicio
-                ? new Date(sesion.fecha_inicio).toLocaleString('es-CL')
-                : '—'
-            }
+            styles={styles}
+            color={Colors.textSecondary}
+            icon="reloj"
+            label="Inicio de turno"
+            value={sesion?.fecha_inicio ? new Date(sesion.fecha_inicio).toLocaleString('es-CL') : '—'}
           />
+        </View>
+
+        {/* ── Apariencia ─────────────────────────────────── */}
+        <Text style={styles.sectionTitle}>Apariencia</Text>
+        <View style={styles.card}>
+          <View style={styles.actionRow}>
+            <Icon name={isDark ? 'luna' : 'sol'} size={22} color={Colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.actionLabel}>Modo oscuro</Text>
+              <Text style={styles.actionHint}>{isDark ? 'Activado' : 'Desactivado'}</Text>
+            </View>
+            <Switch
+              value={isDark}
+              onValueChange={(v) => setMode(v ? 'dark' : 'light')}
+              trackColor={{ false: Colors.borderDark, true: Colors.primary }}
+              thumbColor="#FFFFFF"
+              ios_backgroundColor={Colors.borderDark}
+            />
+          </View>
         </View>
 
         {/* ── Acciones ───────────────────────────────────── */}
         <Text style={styles.sectionTitle}>Acciones</Text>
-        <View style={styles.actionsCard}>
+        <View style={styles.card}>
           <TouchableOpacity style={styles.actionRow}>
-            <Text style={styles.actionIcon}>📊</Text>
-            <Text style={styles.actionLabel}>Ver mis evidencias del turno</Text>
-            <Text style={styles.chevron}>›</Text>
+            <Icon name="chart" size={22} color={Colors.textSecondary} />
+            <Text style={[styles.actionLabel, { flex: 1 }]}>Ver mis evidencias del turno</Text>
+            <Icon name="chevron" size={18} color={Colors.textMuted} />
           </TouchableOpacity>
-          <Divider />
+          <View style={styles.divider} />
           <TouchableOpacity style={styles.actionRow}>
-            <Text style={styles.actionIcon}>📍</Text>
-            <Text style={styles.actionLabel}>Historial de ubicaciones</Text>
-            <Text style={styles.chevron}>›</Text>
+            <Icon name="inicio" size={22} color={Colors.textSecondary} />
+            <Text style={[styles.actionLabel, { flex: 1 }]}>Historial de ubicaciones</Text>
+            <Icon name="chevron" size={18} color={Colors.textMuted} />
           </TouchableOpacity>
         </View>
 
@@ -135,11 +161,11 @@ export default function ProfileScreen() {
           activeOpacity={0.8}
         >
           {loggingOut ? (
-            <ActivityIndicator color={Colors.textWhite} />
+            <ActivityIndicator color={Colors.danger} />
           ) : (
             <>
-              <Text style={styles.logoutIcon}>🚪</Text>
-              <Text style={styles.logoutText}>Cerrar Sesión / Finalizar Turno</Text>
+              <Icon name="salir" size={20} color={Colors.danger} />
+              <Text style={styles.logoutText}>Cerrar sesión y finalizar turno</Text>
             </>
           )}
         </TouchableOpacity>
@@ -150,10 +176,22 @@ export default function ProfileScreen() {
   );
 }
 
-function InfoRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+function InfoRow({
+  icon,
+  label,
+  value,
+  styles,
+  color,
+}: {
+  icon: IconName;
+  label: string;
+  value: string;
+  styles: ReturnType<typeof makeStyles>;
+  color: string;
+}) {
   return (
     <View style={styles.infoRow}>
-      <Text style={styles.infoIcon}>{icon}</Text>
+      <Icon name={icon} size={22} color={color} />
       <View style={styles.infoContent}>
         <Text style={styles.infoLabel}>{label}</Text>
         <Text style={styles.infoValue}>{value}</Text>
@@ -162,101 +200,78 @@ function InfoRow({ icon, label, value }: { icon: string; label: string; value: s
   );
 }
 
-function Divider() {
-  return <View style={styles.divider} />;
-}
+const makeStyles = (Colors: ThemeColors) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: Colors.background },
+    scroll: { padding: Spacing.xl, paddingBottom: Spacing.xxxl },
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.background },
-  scroll: { padding: Spacing.xl, paddingBottom: Spacing.xxxl },
+    profileCard: { alignItems: 'center', paddingVertical: Spacing.xl, marginBottom: Spacing.lg },
+    avatar: {
+      width: 84,
+      height: 84,
+      borderRadius: 42,
+      backgroundColor: Colors.primarySoft,
+      borderWidth: 1.5,
+      borderColor: Colors.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: Spacing.md,
+    },
+    avatarText: { color: Colors.primary, fontSize: Fonts.sizes.xxxl, fontWeight: '500' },
+    name: { fontSize: Fonts.sizes.xxl, fontWeight: '600', color: Colors.textPrimary, textAlign: 'center' },
+    grade: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginTop: Spacing.xs },
+    stateBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Spacing.xs + 2,
+      marginTop: Spacing.md,
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.xs,
+      borderRadius: BorderRadius.full,
+      borderWidth: 1,
+    },
+    stateDot: { width: 7, height: 7, borderRadius: 4 },
+    stateText: { fontSize: Fonts.sizes.xs, fontWeight: '600', letterSpacing: 1 },
 
-  profileCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.xl,
-    padding: Spacing.xxl,
-    alignItems: 'center',
-    marginBottom: Spacing.xl,
-    ...Shadow.md,
-  },
-  avatar: {
-    width: 88,
-    height: 88,
-    borderRadius: 44,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-    ...Shadow.lg,
-  },
-  avatarText: { color: Colors.textWhite, fontSize: Fonts.sizes.xxxl, fontWeight: '900' },
-  name: { fontSize: Fonts.sizes.xxl, fontWeight: '900', color: Colors.textPrimary, textAlign: 'center' },
-  grade: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginTop: Spacing.xs },
-  stateBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    marginTop: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
-  },
-  stateDot: { width: 8, height: 8, borderRadius: 4 },
-  stateText: { fontSize: Fonts.sizes.xs, fontWeight: '700', letterSpacing: 1 },
+    sectionTitle: {
+      fontSize: Fonts.sizes.xs,
+      fontWeight: '600',
+      color: Colors.textMuted,
+      letterSpacing: 1,
+      marginBottom: Spacing.sm,
+      textTransform: 'uppercase',
+    },
 
-  sectionTitle: {
-    fontSize: Fonts.sizes.sm,
-    fontWeight: '700',
-    color: Colors.textMuted,
-    letterSpacing: 1,
-    marginBottom: Spacing.sm,
-    textTransform: 'uppercase',
-  },
+    card: {
+      backgroundColor: Colors.surface,
+      borderRadius: BorderRadius.lg,
+      marginBottom: Spacing.xl,
+      overflow: 'hidden',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: Colors.border,
+    },
+    infoRow: { flexDirection: 'row', alignItems: 'center', padding: Spacing.lg, gap: Spacing.md },
+    infoContent: { flex: 1 },
+    infoLabel: { fontSize: Fonts.sizes.xs, color: Colors.textMuted },
+    infoValue: { fontSize: Fonts.sizes.sm, fontWeight: '500', color: Colors.textPrimary, marginTop: 2 },
+    divider: { height: StyleSheet.hairlineWidth, backgroundColor: Colors.border, marginHorizontal: Spacing.lg },
 
-  infoCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    marginBottom: Spacing.xl,
-    overflow: 'hidden',
-    ...Shadow.sm,
-  },
-  infoRow: { flexDirection: 'row', alignItems: 'center', padding: Spacing.lg, gap: Spacing.md },
-  infoIcon: { fontSize: 20, width: 28 },
-  infoContent: { flex: 1 },
-  infoLabel: { fontSize: Fonts.sizes.xs, color: Colors.textMuted },
-  infoValue: { fontSize: Fonts.sizes.sm, fontWeight: '600', color: Colors.textPrimary, marginTop: 2 },
-  divider: { height: 1, backgroundColor: Colors.border, marginHorizontal: Spacing.lg },
+    actionRow: { flexDirection: 'row', alignItems: 'center', padding: Spacing.lg, gap: Spacing.md },
+    actionLabel: { fontSize: Fonts.sizes.sm, fontWeight: '500', color: Colors.textPrimary },
+    actionHint: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, marginTop: 2 },
 
-  actionsCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
-    marginBottom: Spacing.xl,
-    overflow: 'hidden',
-    ...Shadow.sm,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: Spacing.lg,
-    gap: Spacing.md,
-  },
-  actionIcon: { fontSize: 20, width: 28 },
-  actionLabel: { flex: 1, fontSize: Fonts.sizes.sm, fontWeight: '500', color: Colors.textPrimary },
-  chevron: { fontSize: 20, color: Colors.textMuted },
-
-  logoutBtn: {
-    height: 56,
-    backgroundColor: Colors.danger,
-    borderRadius: BorderRadius.xl,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-    ...Shadow.md,
-  },
-  logoutBtnDisabled: { opacity: 0.6 },
-  logoutIcon: { fontSize: 20 },
-  logoutText: { color: Colors.textWhite, fontSize: Fonts.sizes.md, fontWeight: '700' },
-  version: { textAlign: 'center', color: Colors.textMuted, fontSize: Fonts.sizes.xs },
-});
+    logoutBtn: {
+      height: 52,
+      borderWidth: 1,
+      borderColor: Colors.danger,
+      borderRadius: BorderRadius.md,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: Spacing.sm,
+      marginBottom: Spacing.lg,
+    },
+    logoutBtnDisabled: { opacity: 0.6 },
+    logoutText: { color: Colors.danger, fontSize: Fonts.sizes.md, fontWeight: '600' },
+    version: { textAlign: 'center', color: Colors.textMuted, fontSize: Fonts.sizes.xs },
+  });

@@ -8,12 +8,13 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
 } from 'react-native';
-import { Colors, Spacing, BorderRadius, Fonts, Shadow } from '../../theme';
+import { Spacing, BorderRadius, Fonts, ThemeColors } from '../../theme';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
+import Icon, { IconName } from '../Icon';
 import { TripulacionMiembro } from '../../types';
 import { addCrewMember, removeCrewMember } from '../../services/patrol.service';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { Keyboard } from 'react-native';
 
 interface PatrolCrewListProps {
   crew: TripulacionMiembro[];
@@ -23,17 +24,17 @@ interface PatrolCrewListProps {
   onCrewChange: () => void;
 }
 
-const getTransportEmoji = (tipo: string) => {
+const getTransportIcon = (tipo: string): IconName => {
   switch (tipo) {
-    case 'MOTO': return '🏍️';
-    case 'BICICLETA': return '🚲';
-    case 'INFANTERIA': return '👮';
-    default: return '🚓';
+    case 'MOTO': return 'moto';
+    case 'BICICLETA': return 'bici';
+    case 'INFANTERIA': return 'peaton';
+    default: return 'auto';
   }
 };
 
 /**
- * PatrolCrewList — Gestión táctica de dotación y tripulación en tiempo real
+ * PatrolCrewList — Gestión de dotación y tripulación en tiempo real
  */
 export default function PatrolCrewList({
   crew,
@@ -42,11 +43,23 @@ export default function PatrolCrewList({
   tipoTransporte,
   onCrewChange,
 }: PatrolCrewListProps) {
+  const { Colors } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [addRut, setAddRut] = useState('');
   const [loadingAdd, setLoadingAdd] = useState(false);
   const [loadingRemove, setLoadingRemove] = useState<string | null>(null);
 
   const handleAddMember = async () => {
+    if (tipoTransporte !== 'PATRULLA') {
+      Alert.alert('Medio Individual', 'Moto, Bicicleta e Infantería operan con 1 solo funcionario (sin acompañantes).');
+      return;
+    }
+
+    if (crew.length >= 2) {
+      Alert.alert('Límite de Dotación', 'Radio Patrulla admite un máximo de 2 acompañantes (total 3 funcionarios en turno).');
+      return;
+    }
+
     const rutLimpio = addRut.trim();
     if (!rutLimpio) {
       Alert.alert('Atención', 'Ingresa el RUT del funcionario a sumar al turno.');
@@ -108,26 +121,23 @@ export default function PatrolCrewList({
       {/* Encabezado con tipo de transporte */}
       <View style={styles.header}>
         {(!tipoTransporte || tipoTransporte === 'PATRULLA') ? (
-          <Image 
+          <Image
             source={require('../../../assets/icono de patrulla.png')}
             style={{ width: 40, height: 80, resizeMode: 'contain' }}
           />
         ) : (
-          <Text style={styles.transportIconEmoji}>{getTransportEmoji(tipoTransporte)}</Text>
+          <Icon name={getTransportIcon(tipoTransporte)} size={30} color={Colors.primary} />
         )}
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Dotación de Turno</Text>
+          <Text style={styles.headerTitle}>Dotación de turno</Text>
           <Text style={styles.headerSub}>
-            Modo: {tipoTransporte.replace('_', ' ')} • {crew.length + 1} Efectivo(s)
+            Modo: {tipoTransporte.replace('_', ' ')} · {crew.length + 1} efectivo(s)
           </Text>
         </View>
       </View>
 
-      {/* Funcionario a cargo (Conductor / Líder) */}
+      {/* Funcionario a cargo */}
       <View style={styles.leadCard}>
-        <View style={styles.leadBadge}>
-          <Text style={styles.leadBadgeText}>LÍDER / A CARGO</Text>
-        </View>
         <View style={styles.memberAvatarLead}>
           <Text style={styles.avatarTextLead}>{conductorNombre.charAt(0).toUpperCase()}</Text>
         </View>
@@ -135,15 +145,18 @@ export default function PatrolCrewList({
           <Text style={styles.memberName}>{conductorNombre}</Text>
           <Text style={styles.memberRut}>{conductorRut}</Text>
         </View>
+        <View style={styles.leadBadge}>
+          <Text style={styles.leadBadgeText}>A CARGO</Text>
+        </View>
       </View>
 
       {/* Acompañantes asignados */}
       {crew.length > 0 ? (
         <View style={styles.crewSection}>
-          <Text style={styles.sectionSubtitle}>Compañero(s) en Terreno ({crew.length})</Text>
+          <Text style={styles.sectionSubtitle}>Compañero(s) en terreno ({crew.length})</Text>
           {crew.map((item) => {
             const nombre = item.usuarios?.nombre_completo ?? 'Funcionario Acompañante';
-            const grado = item.usuarios?.grado_cargo ? `${item.usuarios.grado_cargo} • ` : '';
+            const grado = item.usuarios?.grado_cargo ? `${item.usuarios.grado_cargo} · ` : '';
             const isDeleting = loadingRemove === item.rut_acompanante;
 
             return (
@@ -157,7 +170,6 @@ export default function PatrolCrewList({
                   <Text style={styles.memberRut}>{grado}RUT: {item.rut_acompanante}</Text>
                 </View>
 
-                {/* Botón de eliminación destacado */}
                 {isDeleting ? (
                   <ActivityIndicator size="small" color={Colors.danger} style={styles.deleteSpinner} />
                 ) : (
@@ -166,8 +178,8 @@ export default function PatrolCrewList({
                     onPress={() => handleRemoveMember(item.rut_acompanante, item.usuarios?.nombre_completo)}
                     activeOpacity={0.75}
                   >
-                    <Feather name="trash-2" size={14} color={Colors.danger} style={{ marginRight: 4 }} />
-                    <Text style={styles.deleteBtnText}>Eliminar</Text>
+                    <Icon name="cerrar" size={14} color={Colors.danger} />
+                    <Text style={styles.deleteBtnText}>Quitar</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -176,7 +188,7 @@ export default function PatrolCrewList({
         </View>
       ) : (
         <View style={styles.emptyCard}>
-          <Feather name="shield" size={24} color={Colors.textSecondary} />
+          <Icon name="escudo" size={22} color={Colors.textSecondary} />
           <View style={{ flex: 1 }}>
             <Text style={styles.emptyTitle}>Patrullaje individual</Text>
             <Text style={styles.emptySub}>Sin compañero asignado actualmente.</Text>
@@ -185,181 +197,174 @@ export default function PatrolCrewList({
       )}
 
       {/* Agregar miembro en caliente */}
-      <View style={styles.addWrapper}>
-        <Text style={styles.addLabel}>Sumar compañero durante el turno:</Text>
-        <View style={styles.addSection}>
-          <TextInput
-            style={styles.addInput}
-            placeholder="RUT compañero (ej: 19876543-2)"
-            placeholderTextColor={Colors.textMuted}
-            value={addRut}
-            onChangeText={setAddRut}
-            autoCapitalize="none"
-            returnKeyType="done"
-            onSubmitEditing={() => Keyboard.dismiss()}
-          />
-          <TouchableOpacity
-            style={[styles.addBtn, loadingAdd && styles.addBtnDisabled]}
-            onPress={handleAddMember}
-            disabled={loadingAdd}
-          >
-            {loadingAdd ? (
-              <ActivityIndicator size="small" color={Colors.textWhite} />
-            ) : (
-              <Text style={styles.addBtnText}>+ Sumar</Text>
-            )}
-          </TouchableOpacity>
+      {tipoTransporte !== 'PATRULLA' ? (
+        <View style={[styles.emptyCard, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, marginTop: Spacing.sm }]}>
+          <Text style={{ fontSize: Fonts.sizes.sm, color: Colors.textSecondary, lineHeight: 18 }}>
+            ℹ️ <Text style={{ fontWeight: '600' }}>Medio de transporte individual:</Text> Este móvil ({tipoTransporte.replace('_', ' ')}) opera con 1 solo funcionario (sin acompañantes).
+          </Text>
         </View>
-      </View>
+      ) : crew.length >= 2 ? (
+        <View style={[styles.emptyCard, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, marginTop: Spacing.sm }]}>
+          <Text style={{ fontSize: Fonts.sizes.sm, color: Colors.warning, fontWeight: '600' }}>
+            ✓ Dotación completa: Radio Patrulla tiene asignados los 2 acompañantes permitidos.
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.addWrapper}>
+          <Text style={styles.addLabel}>Sumar compañero durante el turno ({crew.length}/2)</Text>
+          <View style={styles.addSection}>
+            <TextInput
+              style={styles.addInput}
+              placeholder="RUT compañero (ej: 19876543-2)"
+              placeholderTextColor={Colors.textMuted}
+              value={addRut}
+              onChangeText={setAddRut}
+              autoCapitalize="none"
+              returnKeyType="done"
+              onSubmitEditing={() => Keyboard.dismiss()}
+            />
+            <TouchableOpacity
+              style={[styles.addBtn, loadingAdd && styles.addBtnDisabled]}
+              onPress={handleAddMember}
+              disabled={loadingAdd}
+            >
+              {loadingAdd ? (
+                <ActivityIndicator size="small" color={Colors.onPrimary} />
+              ) : (
+                <>
+                  <Icon name="mas" size={16} color={Colors.onPrimary} />
+                  <Text style={styles.addBtnText}>Sumar</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { paddingVertical: Spacing.md },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-  transportIconEmoji: { fontSize: 32 },
-  headerTitle: { fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.textPrimary },
-  headerSub: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary },
+const makeStyles = (Colors: ThemeColors) =>
+  StyleSheet.create({
+    container: { paddingVertical: Spacing.md },
+    header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
+    headerTitle: { fontSize: Fonts.sizes.md, fontWeight: '600', color: Colors.textPrimary },
+    headerSub: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary },
 
-  leadCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EBF8FF',
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    borderLeftWidth: 4,
-    borderLeftColor: Colors.info,
-    gap: Spacing.md,
-    ...Shadow.sm,
-  },
-  leadBadge: {
-    backgroundColor: Colors.info,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 3,
-    borderRadius: BorderRadius.sm,
-    position: 'absolute',
-    top: Spacing.sm,
-    right: Spacing.md,
-  },
-  leadBadgeText: { color: Colors.textWhite, fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
+    leadCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: Colors.primarySoft,
+      borderRadius: BorderRadius.md,
+      padding: Spacing.md,
+      marginBottom: Spacing.sm,
+      gap: Spacing.md,
+    },
+    leadBadge: {
+      borderWidth: 1,
+      borderColor: Colors.primary,
+      paddingHorizontal: Spacing.sm,
+      paddingVertical: 2,
+      borderRadius: BorderRadius.full,
+    },
+    leadBadgeText: { color: Colors.primary, fontSize: 9, fontWeight: '600', letterSpacing: 0.8 },
 
-  memberAvatarLead: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.info,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarTextLead: { color: Colors.textWhite, fontWeight: '800', fontSize: Fonts.sizes.md },
+    memberAvatarLead: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: Colors.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    avatarTextLead: { color: Colors.onPrimary, fontWeight: '600', fontSize: Fonts.sizes.md },
 
-  crewSection: {
-    marginTop: Spacing.xs,
-    marginBottom: Spacing.sm,
-  },
-  sectionSubtitle: {
-    fontSize: Fonts.sizes.xs,
-    fontWeight: '700',
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: Spacing.xs,
-    marginLeft: Spacing.xs,
-  },
+    crewSection: { marginTop: Spacing.xs, marginBottom: Spacing.sm },
+    sectionSubtitle: {
+      fontSize: Fonts.sizes.xs,
+      fontWeight: '600',
+      color: Colors.textSecondary,
+      textTransform: 'uppercase',
+      letterSpacing: 0.8,
+      marginBottom: Spacing.xs,
+      marginLeft: Spacing.xs,
+    },
 
-  memberCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.inputBackground,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    gap: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    ...Shadow.sm,
-  },
-  memberAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: Colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: { color: Colors.textWhite, fontWeight: '700', fontSize: Fonts.sizes.md },
-  memberInfo: { flex: 1 },
-  memberName: { fontSize: Fonts.sizes.sm, fontWeight: '700', color: Colors.textPrimary },
-  memberRut: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, marginTop: 2 },
+    memberCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: Colors.surface,
+      borderRadius: BorderRadius.md,
+      padding: Spacing.md,
+      marginBottom: Spacing.sm,
+      gap: Spacing.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: Colors.border,
+    },
+    memberAvatar: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: Colors.primarySoft,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    avatarText: { color: Colors.primary, fontWeight: '600', fontSize: Fonts.sizes.md },
+    memberInfo: { flex: 1 },
+    memberName: { fontSize: Fonts.sizes.sm, fontWeight: '600', color: Colors.textPrimary },
+    memberRut: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, marginTop: 2 },
 
-  deleteBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEE2E2',
-    paddingVertical: Spacing.xs + 2,
-    paddingHorizontal: Spacing.sm + 2,
-    borderRadius: BorderRadius.sm,
-    borderWidth: 1,
-    borderColor: '#FCA5A5',
-  },
-  deleteBtnText: { color: Colors.danger, fontWeight: '700', fontSize: Fonts.sizes.xs },
-  deleteSpinner: { paddingHorizontal: Spacing.md },
+    deleteBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 4,
+      paddingVertical: Spacing.xs + 2,
+      paddingHorizontal: Spacing.sm + 2,
+      borderRadius: BorderRadius.sm,
+      borderWidth: 1,
+      borderColor: Colors.danger,
+    },
+    deleteBtnText: { color: Colors.danger, fontWeight: '500', fontSize: Fonts.sizes.xs },
+    deleteSpinner: { paddingHorizontal: Spacing.md },
 
-  emptyCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F7FAFC',
-    borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.sm,
-    gap: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  emptyTitle: { fontSize: Fonts.sizes.sm, fontWeight: '600', color: Colors.textPrimary },
-  emptySub: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, marginTop: 2 },
+    emptyCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: Colors.surface,
+      borderRadius: BorderRadius.md,
+      padding: Spacing.md,
+      marginBottom: Spacing.sm,
+      gap: Spacing.md,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: Colors.border,
+    },
+    emptyTitle: { fontSize: Fonts.sizes.sm, fontWeight: '500', color: Colors.textPrimary },
+    emptySub: { fontSize: Fonts.sizes.xs, color: Colors.textMuted, marginTop: 2 },
 
-  addWrapper: {
-    marginTop: Spacing.sm,
-  },
-  addLabel: {
-    fontSize: Fonts.sizes.xs,
-    fontWeight: '600',
-    color: Colors.textSecondary,
-    marginBottom: 6,
-    marginLeft: 2,
-  },
-  addSection: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  addInput: {
-    flex: 1,
-    height: 46,
-    backgroundColor: Colors.inputBackground,
-    borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md,
-    fontSize: Fonts.sizes.sm,
-    color: Colors.textPrimary,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  addBtn: {
-    paddingHorizontal: Spacing.md,
-    height: 46,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...Shadow.sm,
-  },
-  addBtnDisabled: { opacity: 0.5 },
-  addBtnText: { color: Colors.textWhite, fontSize: Fonts.sizes.sm, fontWeight: '700' },
-});
+    addWrapper: { marginTop: Spacing.sm },
+    addLabel: { fontSize: Fonts.sizes.xs, fontWeight: '500', color: Colors.textSecondary, marginBottom: 6, marginLeft: 2 },
+    addSection: { flexDirection: 'row', gap: Spacing.sm },
+    addInput: {
+      flex: 1,
+      height: 46,
+      backgroundColor: Colors.inputBackground,
+      borderRadius: BorderRadius.md,
+      paddingHorizontal: Spacing.md,
+      fontSize: Fonts.sizes.sm,
+      color: Colors.textPrimary,
+      borderWidth: 1,
+      borderColor: Colors.border,
+    },
+    addBtn: {
+      flexDirection: 'row',
+      gap: 4,
+      paddingHorizontal: Spacing.md,
+      height: 46,
+      borderRadius: BorderRadius.md,
+      backgroundColor: Colors.primary,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    addBtnDisabled: { opacity: 0.5 },
+    addBtnText: { color: Colors.onPrimary, fontSize: Fonts.sizes.sm, fontWeight: '600' },
+  });

@@ -1,14 +1,27 @@
-import { signal, computed } from '@angular/core';
+import { Injectable, signal, computed, effect } from '@angular/core';
 import {
   SesionOperativa, AlertaEmergencia, AsignacionTactica,
   EstadoOperativo, GpsPayload,
 } from '../../../core/models';
+import { HotspotZone } from '../../../core/services/map.service';
+
+export interface PatrullaFicticia {
+  id:        string;
+  nombre:    string;
+  tipo:      'PATRULLA' | 'MOTO' | 'BICICLETA';
+  estado:    'DISPONIBLE' | 'EN_RUTA' | 'PATRULLANDO';
+  lat:       number;
+  lng:       number;
+  destinoZone?: HotspotZone;
+  isManual?: boolean;
+}
 
 /**
  * Signal Store del Dashboard.
  * Toda la lógica de estado reactivo centralizada aquí.
  * Usar como servicio inyectado en DashboardComponent.
  */
+@Injectable({ providedIn: 'root' })
 export class DashboardStore {
   // ─── Estado primario ───────────────────────────────────────────────────
   readonly unidades          = signal<SesionOperativa[]>([]);
@@ -18,6 +31,44 @@ export class DashboardStore {
   readonly cargando          = signal<boolean>(false);
   readonly showOverrideModal = signal<boolean>(false);
   readonly showSOSDrawer     = signal<boolean>(false);
+
+  // ─── Patrullas DEMO (Persistentes en localStorage) ─────────────────────
+  readonly patrullasFicticias = signal<PatrullaFicticia[]>(
+    (() => {
+      try {
+        const saved = localStorage.getItem('sigo_patrullas_ficticias');
+        if (saved) {
+          const list = JSON.parse(saved);
+          if (Array.isArray(list)) return list;
+        }
+      } catch (e) {
+        console.warn('[DashboardStore] Error cargando patrullas ficticias:', e);
+      }
+      return [];
+    })()
+  );
+  readonly patrullaFicticiaSeleccionada = signal<PatrullaFicticia | null>(null);
+
+  constructor() {
+    effect(() => {
+      try {
+        localStorage.setItem('sigo_patrullas_ficticias', JSON.stringify(this.patrullasFicticias()));
+      } catch (e) {
+        console.warn('[DashboardStore] Error guardando patrullas ficticias:', e);
+      }
+    });
+  }
+
+  resetDemoPatrolsToAvailable(): void {
+    this.patrullasFicticias.update(list =>
+      list.map(p => ({
+        ...p,
+        estado: 'DISPONIBLE' as const,
+        destinoZone: undefined,
+        isManual: false,
+      }))
+    );
+  }
 
   // ─── Capas del mapa ───────────────────────────────────────────────────
   readonly layerHeatmap   = signal<boolean>(true);

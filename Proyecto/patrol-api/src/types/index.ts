@@ -34,6 +34,7 @@ export interface PatrolLoginResponse {
   funcionario: {
     rut: string;
     nombre_completo: string;
+    grado_cargo?: string;
     rol: RolUsuario;
   };
   sesion: {

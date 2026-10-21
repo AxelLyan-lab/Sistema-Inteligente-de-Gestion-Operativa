@@ -4,14 +4,29 @@ import {
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, Validators, AbstractControl } from '@angular/forms';
 import { AuthService } from '../../../core/services/auth.service';
+import { ThemeService } from '../../../core/services/theme.service';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 @Component({
   selector:          'app-login',
   standalone:        true,
-  imports:           [CommonModule, ReactiveFormsModule],
+  imports:           [CommonModule, ReactiveFormsModule, IconComponent],
   changeDetection:   ChangeDetectionStrategy.OnPush,
   template: `
   <div class="min-h-screen bg-sigo-bg flex items-center justify-center px-4 relative overflow-hidden">
+
+    <!-- Botón Toggle Modo Claro / Oscuro en Login -->
+    <div class="absolute top-5 right-5 z-20">
+      <button
+        type="button"
+        (click)="theme.toggle()"
+        [title]="theme.isDark() ? 'Cambiar a modo claro' : 'Cambiar a modo táctico nocturno'"
+        class="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-sigo-border bg-sigo-surface text-sigo-text shadow-card hover:scale-105 transition-all text-xs font-semibold cursor-pointer"
+      >
+        <app-icon [name]="theme.isDark() ? 'sol' : 'luna'" [size]="16"></app-icon>
+        <span>{{ theme.isDark() ? 'Modo Claro' : 'Modo Oscuro' }}</span>
+      </button>
+    </div>
 
     <!-- Fondo animado con gradiente radial -->
     <div class="absolute inset-0 pointer-events-none">
@@ -26,15 +41,9 @@ import { AuthService } from '../../../core/services/auth.service';
 
       <!-- Logo y título -->
       <div class="text-center mb-8">
-        <div class="inline-flex items-center justify-center w-16 h-16 rounded-2xl
-                    bg-sigo-accent/10 border border-sigo-accent/30 mb-4">
-          <svg class="w-8 h-8 text-sigo-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-              d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955
-                 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622
-                 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/>
-          </svg>
-        </div>
+        <img src="assets/logo-carabineros.webp" alt="Carabineros de Chile"
+             class="w-24 h-24 mx-auto mb-4 object-contain drop-shadow-lg" />
+      
         <h1 class="text-3xl font-bold text-sigo-text tracking-tight">S.I.G.O.</h1>
         <p class="text-sigo-muted text-sm mt-1">Sistema Inteligente de Gestión Operativa</p>
         <div class="mt-2 inline-block px-3 py-1 bg-sigo-accent/10 border border-sigo-accent/20
@@ -166,6 +175,7 @@ import { AuthService } from '../../../core/services/auth.service';
 })
 export class LoginComponent {
   readonly authService = inject(AuthService);
+  readonly theme       = inject(ThemeService);
   readonly showPassword = signal(false);
 
   private readonly fb = inject(FormBuilder);
