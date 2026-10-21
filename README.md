@@ -1,97 +1,89 @@
-﻿# S.I.G.O. — Sistema Inteligente de Gestión Operativa
+# S.I.G.O. — Sprint 2 (Hito 2)
 
-Sistema inteligente de gestión operativa y supervisión reactiva para patrullaje preventivo y auditoría táctica en tiempo real. Utiliza algoritmos geoespaciales, mapas de calor dinámicos y telemetría de baja latencia para optimizar la cobertura territorial y coordinar unidades en terreno.
-
----
-
-## 📌 Arquitectura y Tecnologías
-
-* **Frontend Web (Dashboard Supervisor)**: Angular 18 (Standalone Components, Signals, RxJS), TailwindCSS.
-* **Cartografía & Visualización Espacial**: Google Maps JavaScript API, Marcadores avanzados (`AdvancedMarkerElement`), motor Canvas Overlay para renderizado dinámico de mapas de calor con compensación de radio por nivel de zoom.
-* **Persistencia & Análisis Espacial**: PostgreSQL 15+ con extensión **PostGIS** e índices espaciales **GiST** en Supabase.
-* **Tiempo Real**: Supabase Realtime (WebSockets) y protocolo de telemetría MQTT.
-* **Gestión de Entorno**: Script de pre-build seguro (`set-env.js`) que inyecta variables desde `.env` hacia las configuraciones de Angular.
+Sistema Inteligente de Gestión Operativa: supervisión reactiva de patrullaje policial en tiempo real.
+En este sprint se agregó la **app móvil para carabineros en terreno** y se completó la **consola web** de mando.
 
 ---
 
-## 🚀 Estado del Desarrollo — Sprint 1
+## 🧩 Componentes
 
-El proyecto cumple con los objetivos y tareas del **Sprint 1**:
-
-1. **HU01: Gestión de Persistencia Espacial y Datos Tácticos**
-   - Extensión PostGIS habilitada en PostgreSQL.
-   - Tablas espaciales creadas: `eventos_hotspots`, `zonas_patrullaje`, `sesiones_operativas`, `telemetria_activa`, `alertas_emergencia`.
-   - Índices espaciales GiST implementados para optimización de consultas geoespaciales.
-   - Script de generación y seeding de puntos delictuales sintéticos en Viña del Mar.
-
-2. **HU02: Visualización de Cartografía Base**
-   - Integración dinámica de Google Maps JavaScript API.
-   - Renderizado del Dashboard centrado en el área operativa de Viña del Mar con tema táctico oscuro.
-   - Gestión de capas tácticas (Mapa de Calor, Unidades activas, Zonas de patrullaje).
-
-3. **HU03: Renderizado de Mapas de Calor Dinámicos**
-   - Consulta reactiva de puntos delictuales geoespaciales.
-   - Capa de densidad dinámica con algoritmo de compensación de radio según el nivel de zoom.
-   - Clasificación de zonas calientes según criticidad delictual (Riesgo Bajo, Medio, Alto).
-   - Temporizador de rotación de cuadrantes calientes cada 30 segundos con countdown visible en el panel.
-
-4. **Funcionalidades de Supervisión y Demo Táctica**
-   - Despacho automático e inteligente de vehículos según nivel de riesgo (Patrullas a zonas de alto riesgo, Motos a riesgo medio, Bicicletas a riesgo bajo).
-   - Máquina de estados táctica (`DISPONIBLE` → `EN_RUTA` → `PATRULLANDO`).
-   - Panel de unidades activas, contadores globales en barra superior y sistema de alertas SOS en tiempo real.
+| Carpeta | Descripción | Tecnología |
+| :--- | :--- | :--- |
+| `Proyecto/sigo-app` | App móvil del funcionario en terreno | React Native (Expo) |
+| `Proyecto/sigo-api` | Servidor que conecta app, consola y base de datos | Node.js + Express + TypeScript |
+| `Proyecto/frontend` | Consola web del supervisor | Angular 18 + Google Maps |
+| Base de datos | Datos, zonas y alertas con mapas | Supabase (PostgreSQL + PostGIS) |
 
 ---
 
-## 📂 Estructura del Repositorio
+## ✅ Historias de Usuario del Sprint
+
+| HU | Nombre | Pts |
+| :--- | :--- | :---: |
+| HU07 | Alertas de desvío de ruta | 5 |
+| HU09 | Control de acceso y roles | 5 |
+| HU13 | Inicio de sesión del funcionario en la app | 5 |
+| HU14 | Seguimiento de ubicación GPS (telemetría) | 8 |
+| HU15 | Botón de pánico SOS y solicitud de refuerzos | 8 |
+| HU16 | Envío de fotos y evidencias desde terreno | 5 |
+| HU17 | Mensajes y notas de voz en tiempo real | 5 |
+| HU18 | Envío manual a zonas y fin de ronda inmediato | 5 |
+| HU19 | Registro de vehículo y tripulación | 3 |
+
+**Total: 49 puntos**
+
+---
+
+## 🚀 Qué se puede hacer ahora
+
+**App móvil (carabinero)**
+- Iniciar sesión y registrar su vehículo y compañeros.
+- Enviar su ubicación en vivo y ver su zona asignada.
+- Presionar **SOS** y pedir refuerzos.
+- Enviar fotos, evidencias, mensajes y notas de voz.
+- Finalizar la ronda al terminar el patrullaje.
+
+**Consola web (supervisor)**
+- Ver el mapa con zonas de riesgo y unidades activas en tiempo real.
+- Asignación automática de zonas cada 30 segundos o envío manual de una unidad.
+- Recibir alertas de SOS y de desvío de ruta, y marcarlas como resueltas.
+- Revisar evidencias y mensajes, y administrar usuarios.
+- Cambiar tema (claro/oscuro) y sonidos de alerta.
+
+---
+
+## 🛠️ Cómo ejecutar
+
+Requisitos: Node.js 18+ y npm. Copiar cada `.env.example` a `.env` con las claves de Supabase y Google Maps.
+
+```bash
+# 1. Servidor (puerto 3000)
+cd Proyecto/sigo-api
+npm install
+npm run dev
+
+# 2. Consola web (http://localhost:4200)
+cd Proyecto/frontend
+npm install
+npm start
+
+# 3. App móvil (escanear el QR con Expo Go)
+cd Proyecto/sigo-app
+npm install --legacy-peer-deps
+npx expo start --tunnel
+```
+
+> La app móvil necesita que `EXPO_PUBLIC_API_URL` (archivo `sigo-app/.env.local`) apunte a la dirección del servidor.
+
+---
+
+## 📂 Estructura
 
 ```text
-├── Documentos Informacion/
-│   ├── Base de datos                 # Esquema relacional SQL y configuración PostGIS
-│   ├── Informacion Proyecto           # Especificación técnica, objetivos y flujos del sistema
-│   └── implementation_plan.md        # Plan de implementación táctico
+├── Documentos Informacion/    # Informes y planes del proyecto
 ├── Proyecto/
-│   └── frontend/                # Aplicación Frontend en Angular 18
-│       ├── src/                      # Código fuente (Core, Features, Components, Store)
-│       ├── scripts/                  # Scripts de utilidades (seed-vina.js, set-env.js, check-db.js)
-│       ├── package.json              # Dependencias y scripts de npm
-│       └── .env.example              # Plantilla de variables de entorno requeridas
+│   ├── sigo-app/              # App móvil
+│   ├── sigo-api/              # Servidor y scripts SQL (database/)
+│   └── frontend/              # Consola web
 └── README.md
 ```
-
----
-
-## 🛠️ Instalación y Puesta en Marcha
-
-### Prerrequisitos
-* **Node.js**: v18 o superior
-* **npm**: v9 o superior
-
-### 1. Clonar el repositorio
-```bash
-git clone https://github.com/AxelLyan-lab/Sistema-Inteligente-de-Gestion-Operativa.git
-cd Sistema-Inteligente-de-Gestion-Operativa/Proyecto/frontend
-```
-
-### 2. Instalar dependencias
-```bash
-npm install
-```
-
-### 3. Configurar variables de entorno
-Copia la plantilla `.env.example` como `.env`:
-```bash
-cp .env.example .env
-```
-Edita `.env` con tus credenciales:
-```env
-SUPABASE_URL=https://tu-proyecto.supabase.co
-SUPABASE_ANON_KEY=tu-anon-key-de-supabase
-GOOGLE_MAPS_API_KEY=tu-api-key-de-google-maps
-```
-
-### 4. Iniciar en modo desarrollo
-```bash
-npm start
-```
-La aplicación estará disponible en `http://localhost:4200`.
-
