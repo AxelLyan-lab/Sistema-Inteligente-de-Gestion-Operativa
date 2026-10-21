@@ -1,0 +1,75 @@
+{
+  "expo": {
+    "name": "S.I.G.O. Patrol",
+    "slug": "sigo-patrol-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A1A2E"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "cl.sigo.patrolapp",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "S.I.G.O. Patrol necesita acceso a tu ubicación para el patrullaje.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "S.I.G.O. Patrol necesita acceso continuo a tu ubicación durante el turno.",
+        "NSCameraUsageDescription": "S.I.G.O. Patrol necesita la cámara para capturar evidencias tácticas.",
+        "NSPhotoLibraryUsageDescription": "S.I.G.O. Patrol necesita acceso a fotos para adjuntar evidencias."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1A1A2E"
+      },
+      "package": "cl.sigo.patrolapp",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyA_-TfqBzBEuE2xD7haWm0fEcfVRF1hs3w"
+        }
+      },
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "INTERNET"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-location",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "S.I.G.O. Patrol necesita la cámara para capturar evidencias."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "S.I.G.O. Patrol accede a tus fotos para adjuntar evidencias.",
+          "cameraPermission": "S.I.G.O. Patrol necesita la cámara para capturar evidencias."
+        }
+      ],
+      "expo-audio"
+    ],
+    "extra": {
+      "apiBaseUrl": "https://frequency-unknown-pay-aquatic.trycloudflare.com/api/v1",
+      "supabaseUrl": "https://cjyrlgpnqkahhyqgyyvu.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqeXJsZ3BucWthaGh5cWd5eXZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4NDI4MjQsImV4cCI6MjEwMzQxODgyNH0.bWBsBriCLAUnTQMG1DXSaDzJDMXauoNFuK2ZdwiC3hA"
+    }
+  }
+}

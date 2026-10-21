@@ -1,0 +1,211 @@
+/* Google Fonts — must come BEFORE @tailwind directives */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Variables de Tema — Modo Claro (Verde Institucional Carabineros #1B3B2B) ──── */
+:root {
+  --sigo-bg:          #F4F7F5;
+  --sigo-surface:     #FFFFFF;
+  --sigo-surface2:    #EBF1ED;
+  --sigo-border:      #CFDCD3;
+  --sigo-accent:      #1B3B2B; /* Verde Institucional Carabineros de Chile */
+  --sigo-accent2:     #142C20; /* Verde institucional oscurecido / presionado */
+  --sigo-accent-light:#3F5E4E;
+  --sigo-accent-soft: #E8EFEA;
+  --sigo-header-bg:   #1B3B2B;
+  --sigo-header-text: #FFFFFF;
+  --sigo-text:        #111412;
+  --sigo-muted:       #5E6D64;
+  --sigo-disponible:  #2F7D52;
+  --sigo-en-ruta:     #B7791F;
+  --sigo-patrullando: #2C5F7C;
+  --sigo-emergencia:  #B3261E;
+  --sigo-inactivo:    #98A19C;
+  --sigo-shadow:      rgba(27, 59, 43, 0.08);
+}
+
+/* ─── Variables de Tema — Modo Oscuro (Verde Institucional Táctico) ──────── */
+html.dark {
+  --sigo-bg:          #0A120E;
+  --sigo-surface:     #0E1813;
+  --sigo-surface2:    #16251D;
+  --sigo-border:      #243B2E;
+  --sigo-accent:      #6FAE8B; /* Verde institucional Carabineros modo oscuro */
+  --sigo-accent2:     #85BF9F;
+  --sigo-accent-light:#8DBFA5;
+  --sigo-accent-soft: #1C2A22;
+  --sigo-header-bg:   #0E1813;
+  --sigo-header-text: #F2F4F3;
+  --sigo-text:        #F2F4F3;
+  --sigo-muted:       #9AA39E;
+  --sigo-disponible:  #6FAE8B;
+  --sigo-en-ruta:     #D9A441;
+  --sigo-patrullando: #6FA3C2;
+  --sigo-emergencia:  #E5736C;
+  --sigo-inactivo:    #6F7873;
+  --sigo-shadow:      rgba(0, 0, 0, 0.45);
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--sigo-bg);
+  color: var(--sigo-text);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ─── Scrollbar minimalista ───────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track { background: var(--sigo-surface); }
+::-webkit-scrollbar-thumb { background: var(--sigo-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--sigo-accent); }
+
+/* ─── Glassmorphism minimalista ───────────────────────────────────────── */
+.glass {
+  background: var(--sigo-surface);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--sigo-border);
+}
+
+/* ─── Google Maps InfoWindow Adaptativo Institucional Compacto ───────── */
+.gm-style .gm-style-iw-a {
+  z-index: 9999 !important;
+}
+.gm-style .gm-style-iw {
+  background: transparent !important;
+  max-height: none !important;
+}
+.gm-style .gm-style-iw-c {
+  background-color: #14271C !important;
+  color: #ffffff !important;
+  border: 1.5px solid #2F7D52 !important;
+  border-radius: 10px !important;
+  padding: 6px 26px 6px 10px !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.75), 0 0 12px rgba(47, 125, 82, 0.35) !important;
+  min-height: unset !important;
+  max-height: unset !important;
+  z-index: 9999 !important;
+}
+.gm-style .gm-style-iw-d {
+  background-color: transparent !important;
+  color: #ffffff !important;
+  overflow: hidden !important;
+  max-height: none !important;
+  padding: 0 !important;
+}
+.gm-style .gm-style-iw-t::after {
+  background: #14271C !important;
+  box-shadow: -2px 2px 4px rgba(0,0,0,0.5) !important;
+  border-left: 1.5px solid #2F7D52 !important;
+  border-bottom: 1.5px solid #2F7D52 !important;
+  width: 9px !important;
+  height: 9px !important;
+}
+.gm-style .gm-style-iw-tc::after {
+  background: #14271C !important;
+}
+.gm-style .gm-ui-hover-effect {
+  filter: invert(1) brightness(2) !important;
+  top: 4px !important;
+  right: 4px !important;
+  width: 18px !important;
+  height: 18px !important;
+  opacity: 0.8 !important;
+}
+.gm-style .gm-ui-hover-effect:hover {
+  opacity: 1 !important;
+}
+.gm-style .gm-ui-hover-effect > span {
+  margin: 1px !important;
+}
+
+html:not(.dark) .gm-style .gm-style-iw-c {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+  border: 1.5px solid #e2e8f0 !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15) !important;
+}
+html:not(.dark) .gm-style .gm-style-iw-d {
+  color: #111827 !important;
+}
+html:not(.dark) .gm-style .gm-style-iw-t::after {
+  background: #ffffff !important;
+  border-left: 1.5px solid #e2e8f0 !important;
+  border-bottom: 1.5px solid #e2e8f0 !important;
+}
+html:not(.dark) .gm-style .gm-ui-hover-effect {
+  filter: none !important;
+}
+
+.sigo-iw-title {
+  color: #ffffff !important;
+}
+.sigo-iw-sub {
+  color: #cbd5e1 !important;
+}
+
+html:not(.dark) .sigo-iw-title {
+  color: #0f172a !important;
+}
+html:not(.dark) .sigo-iw-sub {
+  color: #334155 !important;
+}
+
+/* ─── Pulsing SOS marker ─────────────────────────────────────────────── */
+@keyframes sos-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+  50% { transform: scale(1.15); opacity: 0.9; box-shadow: 0 0 0 12px rgba(220, 38, 38, 0); }
+}
+.sos-pulse { animation: sos-pulse 1.2s ease-in-out infinite; }
+
+/* ─── Status badge animation ─────────────────────────────────────────── */
+@keyframes status-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.badge-blink { animation: status-blink 1.5s ease-in-out infinite; }
+
+/* ─── Component layer utilities ──────────────────────────────────────── */
+@layer components {
+  .btn-primary {
+    @apply bg-sigo-accent text-white font-semibold px-4 py-2 rounded-lg
+           hover:bg-sigo-accent2 transition-all duration-200
+           focus:outline-none focus:ring-2 focus:ring-sigo-accent focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed shadow-sm;
+  }
+  .btn-ghost {
+    @apply text-sigo-muted px-4 py-2 rounded-lg border border-sigo-border
+           hover:border-sigo-accent hover:text-sigo-accent hover:bg-sigo-surface2 transition-all duration-200;
+  }
+  .btn-danger {
+    @apply bg-emergencia text-white font-semibold px-4 py-2 rounded-lg
+           hover:opacity-90 transition-all duration-200;
+  }
+  .card {
+    @apply bg-sigo-surface border border-sigo-border rounded-xl p-4 shadow-card;
+  }
+  .input-field {
+    @apply w-full bg-sigo-surface2 border border-sigo-border rounded-lg px-4 py-2.5
+           text-sigo-text placeholder-sigo-muted
+           focus:outline-none focus:border-sigo-accent focus:ring-1 focus:ring-sigo-accent
+           transition-colors duration-200 text-sm;
+  }
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-lg cursor-pointer
+           hover:bg-sigo-surface2 transition-colors duration-150;
+  }
+}

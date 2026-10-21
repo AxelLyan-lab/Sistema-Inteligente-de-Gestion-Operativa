@@ -42,3 +42,16 @@ bazel-out/
 .DS_Store
 Thumbs.db
 *.log
+
+# Scripts de prueba y temporales
+scratch_*.js
+**/scratch_*.js
+scratch/
+**/scratch/
+
+# Agente y herramientas
+.agents/
+**/.agents/
+skills-lock.json
+**/skills-lock.json
+

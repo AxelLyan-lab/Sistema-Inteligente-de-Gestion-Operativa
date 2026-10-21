@@ -1,4 +1,4 @@
-# S.I.G.O. — Sistema Inteligente de Gestión Operativa
+﻿# S.I.G.O. — Sistema Inteligente de Gestión Operativa
 
 Sistema inteligente de gestión operativa y supervisión reactiva para patrullaje preventivo y auditoría táctica en tiempo real. Utiliza algoritmos geoespaciales, mapas de calor dinámicos y telemetría de baja latencia para optimizar la cobertura territorial y coordinar unidades en terreno.
 
@@ -50,7 +50,7 @@ El proyecto cumple con los objetivos y tareas del **Sprint 1**:
 │   ├── Informacion Proyecto           # Especificación técnica, objetivos y flujos del sistema
 │   └── implementation_plan.md        # Plan de implementación táctico
 ├── Proyecto/
-│   └── dashboard-web/                # Aplicación Frontend en Angular 18
+│   └── frontend/                # Aplicación Frontend en Angular 18
 │       ├── src/                      # Código fuente (Core, Features, Components, Store)
 │       ├── scripts/                  # Scripts de utilidades (seed-vina.js, set-env.js, check-db.js)
 │       ├── package.json              # Dependencias y scripts de npm
@@ -69,7 +69,7 @@ El proyecto cumple con los objetivos y tareas del **Sprint 1**:
 ### 1. Clonar el repositorio
 ```bash
 git clone https://github.com/AxelLyan-lab/Sistema-Inteligente-de-Gestion-Operativa.git
-cd Sistema-Inteligente-de-Gestion-Operativa/Proyecto/dashboard-web
+cd Sistema-Inteligente-de-Gestion-Operativa/Proyecto/frontend
 ```
 
 ### 2. Instalar dependencias
@@ -94,3 +94,4 @@ GOOGLE_MAPS_API_KEY=tu-api-key-de-google-maps
 npm start
 ```
 La aplicación estará disponible en `http://localhost:4200`.
+
