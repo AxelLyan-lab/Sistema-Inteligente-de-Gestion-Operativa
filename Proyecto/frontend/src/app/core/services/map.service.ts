@@ -1,6 +1,10 @@
 import { Injectable, signal, inject } from '@angular/core';
 import { environment } from '../../../environments/environment';
-import { EventoHotspot, SesionOperativa, AsignacionTactica, ESTADO_CONFIG, ZonaPatrullaje, EstadoOperativo } from '../models';
+import {
+  EventoHotspot, SesionOperativa, AsignacionTactica, ESTADO_CONFIG,
+  ZonaPatrullaje, EstadoOperativo, calcularUveSesion, clasificarZonaPorScore,
+  calcularScoreAjustado,
+} from '../models';
 import { getIconSvg } from '../../shared/components/icon/icon.component';
 import { SettingsService } from './settings.service';
 
@@ -37,39 +41,83 @@ export const FLAT_MAP_STYLES = [
 
 // Centro que abarca el Plan de Viña y Miraflores (Chonta 3544) simultáneamente
 const VINA_CENTER = { lat: -33.0185, lng: -71.5320 };
-const VINA_ZOOM   = 13;
+const VINA_ZOOM = 13;
 const HEAT_RADIUS_M = 180; // 180m radio para cobertura térmica de cuadrante urbano
 
 export interface HotspotZone {
-  id:         number;
-  lat:        number;
-  lng:        number;
+  id: number;
+  lat: number;
+  lng: number;
+  radio_m?: number;
   crimeCount: number;  // 1-3: Bajo | 4-6: Medio | 7-10: Alto
-  name:       string;  // Etiqueta corta (Z1, Z2, ...)
-  address:    string;  // Dirección de referencia (se muestra al hacer click)
+  name: string;  // Etiqueta corta (Z1, Z2, ...)
+  address: string;  // Dirección de referencia (se muestra al hacer click)
+  scoreGravedad?: number;  // Puntos calibrados (<40 Bajo, 40-80 Medio, >80 Alto)
+  score_gravedad?: number;
+  scoreAjustado?: number;
+  minutos_patrullados_hoy?: number;
+  nivelRiesgo?: 'ALTO' | 'MEDIO' | 'BAJO';
+  uveObjetivoMin?: number;
+  uveObjetivoMax?: number;
+  uveDemanda?: string;
+  vertices?: { lat: number; lng: number }[];
 }
 
-export function getRisk(count: number): { label: string; color: string; bg: string } {
-  if (count >= 7) return { label: 'ALTO',  color: '#dc2626', bg: 'rgba(220,38,38,0.22)' };
-  if (count >= 4) return { label: 'MEDIO', color: '#ea580c', bg: 'rgba(234,88,12,0.22)' };
-  return             { label: 'BAJO',  color: '#16a34a', bg: 'rgba(22,163,74,0.22)' };
+export function getRisk(count: number, scoreGravedad?: number): { label: string; color: string; bg: string } {
+  if (scoreGravedad != null) {
+    if (scoreGravedad > 80) return { label: 'ALTO', color: '#dc2626', bg: 'rgba(220,38,38,0.22)' };
+    if (scoreGravedad >= 45) return { label: 'MEDIO', color: '#f59e0b', bg: 'rgba(245,158,11,0.22)' };
+    return { label: 'BAJO', color: '#16a34a', bg: 'rgba(22,163,74,0.22)' };
+  }
+  if (count >= 7) return { label: 'ALTO', color: '#dc2626', bg: 'rgba(220,38,38,0.22)' };
+  if (count >= 4) return { label: 'MEDIO', color: '#f59e0b', bg: 'rgba(245,158,11,0.22)' };
+  return { label: 'BAJO', color: '#16a34a', bg: 'rgba(22,163,74,0.22)' };
 }
 
 /**
- * Zonas críticas de patrullaje (Z1..Z9). Ninguna zona está fija: en cada ciclo
- * se activan 3 zonas distintas. La dirección solo se muestra al hacer click.
+ * Zonas críticas de patrullaje (Z1..Z9) pre-calibradas con la misma escala de gravedad delictual
+ * que ApiService (85 pts ALTO, 45 pts MEDIO, 13 pts BAJO) para evitar discrepancias al iniciar el mapa.
  */
-export const HOTSPOT_ZONES: HotspotZone[] = [
-  { id: 1, lat: -33.01840, lng: -71.51398, crimeCount: 10, name: 'Z1', address: 'Chonta 3544, Miraflores' },
-  { id: 2, lat: -33.02229, lng: -71.55278, crimeCount: 10, name: 'Z2', address: '1 Norte / 1 Poniente' },
-  { id: 3, lat: -33.01533, lng: -71.55008, crimeCount:  9, name: 'Z3', address: '8 Norte / Av. Libertad' },
-  { id: 4, lat: -33.02500, lng: -71.55237, crimeCount:  7, name: 'Z4', address: 'Av. Valparaíso / Plaza Vergara' },
-  { id: 5, lat: -33.02079, lng: -71.55627, crimeCount:  6, name: 'Z5', address: '2 Norte / 4 Poniente' },
-  { id: 6, lat: -33.00800, lng: -71.54849, crimeCount:  5, name: 'Z6', address: '15 Norte / Av. Libertad' },
-  { id: 7, lat: -33.01983, lng: -71.54837, crimeCount:  4, name: 'Z7', address: '4 Norte / 2 Oriente' },
-  { id: 8, lat: -33.01439, lng: -71.55655, crimeCount:  3, name: 'Z8', address: 'Av. Perú / 8 Norte' },
-  { id: 9, lat: -33.02546, lng: -71.55872, crimeCount:  2, name: 'Z9', address: 'Alvarez / Traslaviña' },
+const BASE_HOTSPOT_ZONES: HotspotZone[] = [
+  { id: 1, lat: -33.01840, lng: -71.51398, crimeCount: 9, scoreGravedad: 85, score_gravedad: 85, nivelRiesgo: 'ALTO', uveObjetivoMin: 1.00, name: 'Z1', address: 'Chonta 3544, Miraflores' },
+  { id: 2, lat: -33.02229, lng: -71.55278, crimeCount: 6, scoreGravedad: 45, score_gravedad: 45, nivelRiesgo: 'MEDIO', uveObjetivoMin: 0.45, name: 'Z2', address: '1 Norte / 1 Poniente' },
+  { id: 3, lat: -33.01533, lng: -71.55008, crimeCount: 2, scoreGravedad: 13, score_gravedad: 13, nivelRiesgo: 'BAJO', uveObjetivoMin: 0.20, name: 'Z3', address: '8 Norte / Av. Libertad' },
+  { id: 4, lat: -33.02500, lng: -71.55237, crimeCount: 9, scoreGravedad: 85, score_gravedad: 85, nivelRiesgo: 'ALTO', uveObjetivoMin: 1.00, name: 'Z4', address: 'Av. Valparaíso / Plaza Vergara' },
+  { id: 5, lat: -33.02079, lng: -71.55627, crimeCount: 6, scoreGravedad: 45, score_gravedad: 45, nivelRiesgo: 'MEDIO', uveObjetivoMin: 0.45, name: 'Z5', address: '2 Norte / 4 Poniente' },
+  { id: 6, lat: -33.00800, lng: -71.54849, crimeCount: 2, scoreGravedad: 13, score_gravedad: 13, nivelRiesgo: 'BAJO', uveObjetivoMin: 0.20, name: 'Z6', address: '15 Norte / Av. Libertad' },
+  { id: 7, lat: -33.01983, lng: -71.54837, crimeCount: 9, scoreGravedad: 85, score_gravedad: 85, nivelRiesgo: 'ALTO', uveObjetivoMin: 1.00, name: 'Z7', address: '4 Norte / 2 Oriente' },
+  { id: 8, lat: -33.01439, lng: -71.55655, crimeCount: 6, scoreGravedad: 45, score_gravedad: 45, nivelRiesgo: 'MEDIO', uveObjetivoMin: 0.45, name: 'Z8', address: 'Av. Perú / 8 Norte' },
+  { id: 9, lat: -33.02546, lng: -71.55872, crimeCount: 2, scoreGravedad: 13, score_gravedad: 13, nivelRiesgo: 'BAJO', uveObjetivoMin: 0.20, name: 'Z9', address: 'Alvarez / Traslaviña' },
 ];
+
+export const HOTSPOT_ZONES: HotspotZone[] = (() => {
+  try {
+    const raw = localStorage.getItem('sigo_zonas_calibradas_uve_v2');
+    if (raw) {
+      const overlay = JSON.parse(raw);
+      return BASE_HOTSPOT_ZONES.map(z => {
+        const saved = overlay[z.id];
+        if (saved && Array.isArray(saved.delitos)) {
+          const score = saved.delitos.reduce((acc: number, d: any) => acc + Number(d.categoria_peso || 0), 0);
+          const clasif = clasificarZonaPorScore(score);
+          const crimes = score > 80 ? 9 : score >= 40 ? 6 : 2;
+          return {
+            ...z,
+            crimeCount: crimes,
+            scoreGravedad: score,
+            score_gravedad: score,
+            nivelRiesgo: clasif.nivelRiesgo,
+            uveObjetivoMin: clasif.uveObjetivoMin,
+            uveObjetivoMax: clasif.uveObjetivoMax,
+            uveDemanda: clasif.etiquetaDemanda,
+          };
+        }
+        return z;
+      });
+    }
+  } catch { /* ignore */ }
+  return [...BASE_HOTSPOT_ZONES];
+})();
 
 export const CRIME_PRESETS: Record<string, number> = {
   z1: 10,
@@ -106,14 +154,27 @@ export function syncDatabaseZones(dbZones: ZonaPatrullaje[]): void {
   for (const z of dbZones) {
     if (z.activa === false || z.lat == null || z.lng == null) continue;
     const lower = (z.nombre || '').trim().toLowerCase();
-    const crimes = (z as any).cantidad_delitos || CRIME_PRESETS[lower] || 6;
+    const score = z.score_gravedad != null ? Number(z.score_gravedad) : ((CRIME_PRESETS[lower] || 6) * 10);
+    const clasif = clasificarZonaPorScore(score);
+    const crimes = score > 80 ? 9 : score >= 40 ? 6 : 2;
+    const radioM = Math.max(20, Number(z.radio_m) || 160);
     newZones.push({
       id: z.id_zona,
       lat: Number(z.lat),
       lng: Number(z.lng),
+      radio_m: radioM,
       crimeCount: crimes,
       name: z.nombre || `Z${newZones.length + 1}`,
       address: z.direccion || 'Sector Operativo Registrado',
+      scoreGravedad: score,
+      score_gravedad: score,
+      scoreAjustado: z.score_ajustado ?? calcularScoreAjustado(score, z.minutos_patrullados_hoy || 0),
+      minutos_patrullados_hoy: z.minutos_patrullados_hoy || 0,
+      nivelRiesgo: clasif.nivelRiesgo,
+      uveObjetivoMin: clasif.uveObjetivoMin,
+      uveObjetivoMax: clasif.uveObjetivoMax,
+      uveDemanda: clasif.etiquetaDemanda,
+      vertices: z.vertices,
     });
   }
 
@@ -206,17 +267,17 @@ class HeatmapCanvasOverlay {
     mapDiv.appendChild(this.canvas);
 
     const ov = new (google.maps as any).OverlayView();
-    ov.onAdd    = () => {};
-    ov.onRemove = () => {};
-    ov.draw     = () => {
+    ov.onAdd = () => { };
+    ov.onRemove = () => { };
+    ov.draw = () => {
       if (!this.visible || !this.activeZones.length) { this.clear(); return; }
       const proj = ov.getProjection();
       if (!proj) return;
 
       const mapDiv = map.getDiv();
-      this.canvas.width  = mapDiv.offsetWidth;
+      this.canvas.width = mapDiv.offsetWidth;
       this.canvas.height = mapDiv.offsetHeight;
-      const ctx  = this.canvas.getContext('2d')!;
+      const ctx = this.canvas.getContext('2d')!;
       const zoom = map.getZoom() ?? VINA_ZOOM;
       ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
@@ -224,7 +285,7 @@ class HeatmapCanvasOverlay {
         const px = proj.fromLatLngToContainerPixel(new google.maps.LatLng(zone.lat, zone.lng));
         if (!px) continue;
 
-        const R = metersToPx(HEAT_RADIUS_M, zone.lat, zoom);
+        const R = metersToPx(zone.radio_m || HEAT_RADIUS_M, zone.lat, zoom);
         const c = zone.crimeCount;
         let [cr, cg, cb] = [220, 38, 38];
         let [mr, mg, mb] = [234, 88, 12];
@@ -232,29 +293,29 @@ class HeatmapCanvasOverlay {
         let baseAlpha = 0.88;
 
         if (c >= 7) {
-          [cr, cg, cb]   = [220, 38, 38]; // ALTO: Rojo vibrante
-          [mr, mg, mb]   = [234, 88, 12];
-          [or_, og, ob]  = [245, 158, 11];
+          [cr, cg, cb] = [220, 38, 38]; // ALTO: Rojo vibrante
+          [mr, mg, mb] = [234, 88, 12];
+          [or_, og, ob] = [245, 158, 11];
           baseAlpha = 0.92;
         } else if (c >= 4) {
-          [cr, cg, cb]   = [234, 88, 12]; // MEDIO: Naranjo táctico
-          [mr, mg, mb]   = [245, 158, 11];
-          [or_, og, ob]  = [251, 191, 36];
+          [cr, cg, cb] = [234, 88, 12]; // MEDIO: Naranjo táctico
+          [mr, mg, mb] = [245, 158, 11];
+          [or_, og, ob] = [251, 191, 36];
           baseAlpha = 0.82;
         } else {
-          [cr, cg, cb]   = [22, 163, 74]; // BAJO: Verde operativo
-          [mr, mg, mb]   = [34, 197, 94];
-          [or_, og, ob]  = [74, 222, 128];
+          [cr, cg, cb] = [22, 163, 74]; // BAJO: Verde operativo
+          [mr, mg, mb] = [34, 197, 94];
+          [or_, og, ob] = [74, 222, 128];
           baseAlpha = 0.75;
         }
 
         const cy = px.y;
 
         const grad = ctx.createRadialGradient(px.x, cy, 0, px.x, cy, R);
-        grad.addColorStop(0,    `rgba(${cr},${cg},${cb},${baseAlpha})`);
+        grad.addColorStop(0, `rgba(${cr},${cg},${cb},${baseAlpha})`);
         grad.addColorStop(0.35, `rgba(${mr},${mg},${mb},${baseAlpha * 0.70})`);
         grad.addColorStop(0.70, `rgba(${or_},${og},${ob},${baseAlpha * 0.35})`);
-        grad.addColorStop(1.0,  `rgba(${or_},${og},${ob},0)`);
+        grad.addColorStop(1.0, `rgba(${or_},${og},${ob},0)`);
 
         ctx.beginPath();
         ctx.arc(px.x, cy, R, 0, Math.PI * 2);
@@ -267,8 +328,8 @@ class HeatmapCanvasOverlay {
     this.overlay = ov;
     map.addListener('bounds_changed', () => this.overlay?.draw());
     map.addListener('center_changed', () => this.overlay?.draw());
-    map.addListener('zoom_changed',   () => this.overlay?.draw());
-    map.addListener('idle',           () => this.overlay?.draw());
+    map.addListener('zoom_changed', () => this.overlay?.draw());
+    map.addListener('idle', () => this.overlay?.draw());
   }
 
   setActiveZones(z: HotspotZone[]): void {
@@ -293,21 +354,22 @@ class HeatmapCanvasOverlay {
 @Injectable({ providedIn: 'root' })
 export class MapService {
   private map!: google.maps.Map;
-  private markerRefs       = new Map<string, any>();
-  private ficticiaRefs     = new Map<string, any>();
-  private ficticiaEls      = new Map<string, HTMLElement>();
-  private ficticiaTypes    = new Map<string, string>();
-  private polygonRefs       = new Map<number, google.maps.Polygon>();
-  private circleRefs        = new Map<number, google.maps.Circle>();
+  private markerRefs = new Map<string, any>();
+  private ficticiaRefs = new Map<string, any>();
+  private ficticiaEls = new Map<string, HTMLElement>();
+  private ficticiaTypes = new Map<string, string>();
+  private polygonRefs = new Map<number, google.maps.Polygon>();
+  private circleRefs = new Map<number, google.maps.Circle>();
   private patrolZoneCircles = new Map<number, google.maps.Circle>();
   private patrolZoneMarkers = new Map<number, any>();
   private patrolInfoWindow: any = null;
-  private hotspotCircles:   google.maps.Circle[] = [];
-  private zoneMarkers:    any[] = [];
-  private infoWindow:     any   = null;
-  private heatOverlay     = new HeatmapCanvasOverlay();
+  private hotspotCircles: google.maps.Circle[] = [];
+  private hotspotPolygons: google.maps.Polygon[] = [];
+  private zoneMarkers: any[] = [];
+  private infoWindow: any = null;
+  private heatOverlay = new HeatmapCanvasOverlay();
   private lastRenderTime = new Map<string, number>();
-  private cycleTimer: any  = null;
+  private cycleTimer: any = null;
   private currentActiveIds = new Set<number>();
   private manualActiveZoneIds = new Set<number>();
 
@@ -316,31 +378,53 @@ export class MapService {
 
   private readonly settings = inject(SettingsService);
 
-  readonly layerHeatmap    = signal(true);
-  readonly layerSimcards   = signal(true);
-  readonly layerPolygons   = signal(true);
-  readonly layerFlatMap    = signal(false);
-  readonly mapLoaded       = signal(false);
-  readonly cycleCountdown  = signal(120);
-  readonly zones           = HOTSPOT_ZONES;
-  readonly activeZones     = signal<HotspotZone[]>([]);
+  readonly layerHeatmap = signal(true);
+  readonly layerSimcards = signal(true);
+  readonly layerPolygons = signal(true);
+  readonly layerFlatMap = signal(false);
+  readonly mapLoaded = signal(false);
+  readonly cycleCountdown = signal(120);
+  readonly autoRotationEnabled = signal(
+    (() => {
+      const v = localStorage.getItem('sigo_modo_despacho');
+      return v === 'AUTO' || v === 'OPTIMIZADO';
+    })()
+  );
+  readonly zones = HOTSPOT_ZONES;
+  readonly activeZones = signal<HotspotZone[]>([]);
 
   private countdownTimer: any = null;
   private bootstrapPromise: Promise<void> | null = null;
 
+  private async fetchMapsKeyFromBackend(): Promise<string> {
+    if (environment.googleMapsApiKey) return environment.googleMapsApiKey;
+    const token = localStorage.getItem('sigo_token') ?? localStorage.getItem('token') ?? '';
+    const res = await fetch(`${environment.apiBaseUrl}/config/maps-key`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      throw new Error(`[MapService] No se pudo obtener la API Key de mapas (${res.status})`);
+    }
+    const data = await res.json();
+    return data.googleMapsApiKey || '';
+  }
+
   private loadBootstrap(): Promise<void> {
     if (this.bootstrapPromise) return this.bootstrapPromise;
-    this.bootstrapPromise = new Promise<void>((resolve, reject) => {
-      if (window.__gm_bootstrap_done__ && window.google?.maps?.importLibrary) { resolve(); return; }
-      if (!document.querySelector('script[src*="maps.googleapis.com"]')) {
-        const s = document.createElement('script');
-        s.src   = `https://maps.googleapis.com/maps/api/js?key=${environment.googleMapsApiKey}&loading=async&callback=__gm_cb__`;
-        s.async = true; s.defer = true;
-        s.onerror = () => reject(new Error('[MapService] Error cargando Google Maps'));
-        document.head.appendChild(s);
-      }
-      window.__gm_cb__ = () => { window.__gm_bootstrap_done__ = true; resolve(); };
-    });
+    this.bootstrapPromise = (async () => {
+      if (window.__gm_bootstrap_done__ && window.google?.maps?.importLibrary) return;
+      const apiKey = await this.fetchMapsKeyFromBackend();
+      await new Promise<void>((resolve, reject) => {
+        if (!document.querySelector('script[src*="maps.googleapis.com"]')) {
+          const s = document.createElement('script');
+          s.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async&callback=__gm_cb__`;
+          s.async = true; s.defer = true;
+          s.onerror = () => reject(new Error('[MapService] Error cargando Google Maps'));
+          document.head.appendChild(s);
+        }
+        window.__gm_cb__ = () => { window.__gm_bootstrap_done__ = true; resolve(); };
+      });
+    })();
     return this.bootstrapPromise;
   }
 
@@ -350,7 +434,7 @@ export class MapService {
       window.google.maps.importLibrary('maps'),
       window.google.maps.importLibrary('marker'),
     ]);
-    this._Map            = mapsLib.Map;
+    this._Map = mapsLib.Map;
     // Marcador HTML propio (OverlayView): no requiere mapId, así los `styles` de Google sí se aplican.
     this._AdvancedMarker = this.buildHtmlMarkerClass();
 
@@ -379,7 +463,18 @@ export class MapService {
 
     // IMPORTANTE: sin `mapId`. Con mapId Google ignora la opción `styles` y el modo plano no funciona.
     this.map = new this._Map(element, {
-      center: VINA_CENTER, zoom: VINA_ZOOM,
+      center: VINA_CENTER, zoom: 13.5,
+      minZoom: 13,
+      maxZoom: 19,
+      restriction: {
+        latLngBounds: {
+          north: -32.990,
+          south: -33.040,
+          west: -71.575,
+          east: -71.495,
+        },
+        strictBounds: true,
+      },
       styles: this.layerFlatMap() ? FLAT_MAP_STYLES : null,
       disableDefaultUI: false,
       zoomControl: true, mapTypeControl: false,
@@ -392,7 +487,7 @@ export class MapService {
     this.heatOverlay.attach(this.map);
 
     this.map.addListener('rightclick', () => this.infoWindow?.close());
-    this.map.addListener('click',      () => this.infoWindow?.close());
+    this.map.addListener('click', () => this.infoWindow?.close());
 
     this.mapLoaded.set(true);
 
@@ -417,10 +512,10 @@ export class MapService {
       constructor(opts: any) {
         super();
         this._pos = opts.position;
-        this._el  = opts.content;
+        this._el = opts.content;
         this._div = document.createElement('div');
-        this._div.style.position  = 'absolute';
-        this._div.style.cursor    = 'pointer';
+        this._div.style.position = 'absolute';
+        this._div.style.cursor = 'pointer';
         this._div.style.transform = 'translate(-50%, -100%)';
         if (opts.zIndex != null) this._div.style.zIndex = String(opts.zIndex);
         if (opts.title) this._div.title = opts.title;
@@ -443,7 +538,7 @@ export class MapService {
         const p = proj.fromLatLngToDivPixel(this._pos);
         if (!p) return;
         this._div.style.left = p.x + 'px';
-        this._div.style.top  = p.y + 'px';
+        this._div.style.top = p.y + 'px';
       }
 
       onRemove(): void {
@@ -501,10 +596,10 @@ export class MapService {
       wrapper.innerHTML = this.buildZoneMarkerInner(zone, false);
 
       const marker = new this._AdvancedMarker({
-        map:      visible ? this.map : null,
+        map: visible ? this.map : null,
         position: new google.maps.LatLng(zone.lat, zone.lng),
-        content:  wrapper,
-        title:    `Zona Táctica ${zone.name}`,
+        content: wrapper,
+        title: `Zona Táctica ${zone.name}`,
       });
 
       marker.addListener('click', () => {
@@ -513,14 +608,15 @@ export class MapService {
         this.infoWindow.open(this.map);
       });
 
-      (marker as any).__zoneId  = zone.id;
+      (marker as any).__zoneId = zone.id;
       (marker as any).__wrapper = wrapper;
       this.zoneMarkers.push(marker);
     }
   }
 
   private buildZoneMarkerInner(zone: HotspotZone, isActive: boolean): string {
-    const risk = getRisk(zone.crimeCount);
+    const risk = getRisk(zone.crimeCount, zone.scoreGravedad);
+    const scoreTag = zone.scoreGravedad != null ? `${zone.scoreGravedad} pts` : `${zone.crimeCount}/10`;
 
     if (isActive) {
       return `
@@ -540,7 +636,7 @@ export class MapService {
         ">
           <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${risk.color};box-shadow:0 0 6px ${risk.color};"></span>
           <span style="color:#ffffff;font-size:11px;font-weight:800;">${zone.name}</span>
-          <span style="background:${risk.color}33;color:${risk.color};font-size:9.5px;font-weight:800;padding:1px 5px;border-radius:6px;border:1px solid ${risk.color}66;">${zone.crimeCount}/10</span>
+          <span style="background:${risk.color}33;color:${risk.color};font-size:9.5px;font-weight:800;padding:1px 5px;border-radius:6px;border:1px solid ${risk.color}66;">${scoreTag}</span>
         </div>`;
     }
 
@@ -566,8 +662,8 @@ export class MapService {
 
   private updateZoneMarkersState(activeIds: Set<number>): void {
     for (const marker of this.zoneMarkers) {
-      const id      = (marker as any).__zoneId as number;
-      const zone    = HOTSPOT_ZONES.find(z => z.id === id);
+      const id = (marker as any).__zoneId as number;
+      const zone = HOTSPOT_ZONES.find(z => z.id === id);
       if (!zone) continue;
       const wrapper = (marker as any).__wrapper as HTMLElement;
       if (wrapper) wrapper.innerHTML = this.buildZoneMarkerInner(zone, activeIds.has(id));
@@ -575,44 +671,22 @@ export class MapService {
   }
 
   /**
-   * Dibuja los perímetros de patrullaje activos (160m de radio táctico) con bordes de riesgo nítidos.
-   * Pertenecen a la capa "Zonas y Puntos Críticos".
+   * Dibuja las circunferencias de patrullaje activas según el radio configurado para cada zona
+   * (límite exacto entre estar en zona o fuera de zona).
    */
   private updateHotspotCircles(activeZones: HotspotZone[]): void {
     if (!this.map) return;
     this.hotspotCircles.forEach(c => c.setMap(null));
     this.hotspotCircles = [];
+    this.hotspotPolygons.forEach(p => p.setMap(null));
+    this.hotspotPolygons = [];
 
     const visible = this.layerPolygons();
 
     for (const z of activeZones) {
-      const risk = getRisk(z.crimeCount);
-
-      // Núcleo focal del punto de calor (radio 50m) con color más vibrante
-      const coreCircle = new google.maps.Circle({
-        map:           visible ? this.map : null,
-        center:        { lat: z.lat, lng: z.lng },
-        radius:        50,
-        fillColor:     risk.color,
-        fillOpacity:   0.28,
-        strokeColor:   risk.color,
-        strokeOpacity: 0.95,
-        strokeWeight:  2,
-        clickable:     true,
-      });
-
-      // Círculo de perímetro táctico de zona a patrullar (160m)
-      const perimeterCircle = new google.maps.Circle({
-        map:           visible ? this.map : null,
-        center:        { lat: z.lat, lng: z.lng },
-        radius:        160,
-        fillColor:     risk.color,
-        fillOpacity:   0.14,
-        strokeColor:   risk.color,
-        strokeOpacity: 0.85,
-        strokeWeight:  2,
-        clickable:     true,
-      });
+      const risk = getRisk(z.crimeCount, z.scoreGravedad);
+      const radioCircunferencia = Math.max(20, Number(z.radio_m) || 160);
+      const radioNucleo = Math.min(40, Math.max(15, Math.round(radioCircunferencia * 0.28)));
 
       const showInfo = () => {
         this.infoWindow?.setContent(this.buildInfoWindowContent(z));
@@ -620,34 +694,67 @@ export class MapService {
         this.infoWindow?.open(this.map);
       };
 
-      coreCircle.addListener('click', showInfo);
+      // Circunferencia exterior de patrullaje (límite de geocerca: en zona vs fuera de zona)
+      const perimeterCircle = new google.maps.Circle({
+        map: visible ? this.map : null,
+        center: { lat: z.lat, lng: z.lng },
+        radius: radioCircunferencia,
+        fillColor: risk.color,
+        fillOpacity: 0.16,
+        strokeColor: risk.color,
+        strokeOpacity: 0.92,
+        strokeWeight: 2.2,
+        clickable: true,
+      });
       perimeterCircle.addListener('click', showInfo);
+      this.hotspotCircles.push(perimeterCircle);
 
-      this.hotspotCircles.push(coreCircle, perimeterCircle);
+      // Núcleo focal del punto de calor con color más vibrante
+      const coreCircle = new google.maps.Circle({
+        map: visible ? this.map : null,
+        center: { lat: z.lat, lng: z.lng },
+        radius: radioNucleo,
+        fillColor: risk.color,
+        fillOpacity: 0.30,
+        strokeColor: risk.color,
+        strokeOpacity: 0.95,
+        strokeWeight: 2,
+        clickable: true,
+      });
+      coreCircle.addListener('click', showInfo);
+      this.hotspotCircles.push(coreCircle);
     }
   }
 
   private buildInfoWindowContent(zone: HotspotZone): string {
-    const risk = getRisk(zone.crimeCount);
+    const risk = getRisk(zone.crimeCount, zone.scoreGravedad);
+    const score = zone.scoreGravedad != null ? zone.scoreGravedad : zone.crimeCount * 10;
+    const clasif = clasificarZonaPorScore(score);
+    const radioM = Math.max(20, Number(zone.radio_m) || 160);
     return `
-      <div class="sigo-iw-card" style="font-family:'Inter',sans-serif; min-width:210px; max-width:280px; padding:4px 2px; user-select:none;">
+      <div class="sigo-iw-card" style="font-family:'Inter',sans-serif; min-width:230px; max-width:300px; padding:4px 2px; user-select:none;">
         <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
           <div style="display:flex; align-items:center; gap:5px; overflow:hidden;">
             <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:${risk.color}; box-shadow:0 0 6px ${risk.color}; flex-shrink:0;"></span>
             <span class="sigo-iw-title" style="font-weight:800; font-size:13px; color:#ffffff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-              Zona Táctica ${zone.name}
+              Zona de Riesgo ${zone.name}
             </span>
           </div>
           <span style="background:${risk.bg}; color:${risk.color}; font-size:9.5px; font-weight:800; padding:2px 7px; border-radius:6px; border:1px solid ${risk.color}88; white-space:nowrap; flex-shrink:0;">
-            ${risk.label} ${zone.crimeCount}/10
+            ${risk.label} · ${score} pts
           </span>
         </div>
         <div class="sigo-iw-sub" style="font-size:11px; margin-top:5px; font-weight:500; color:#cbd5e1;">
           📍 ${zone.address}
         </div>
-        <div style="margin-top:6px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.12); display:flex; justify-content:space-between; font-size:10px; color:#94a3b8;">
-          <span>Perímetro: <b>160 metros</b></span>
-          <span style="color:${risk.color}; font-weight:700;">● Cuadrante de Patrullaje</span>
+        <div style="margin-top:6px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.12); display:flex; flex-direction:column; gap:3px; font-size:10px; color:#94a3b8;">
+          <div style="display:flex; justify-content:space-between;">
+            <span>Circunferencia: <b>Radio ${radioM} m</b></span>
+            <span style="color:${risk.color}; font-weight:700;">● Nivel ${risk.label}</span>
+          </div>
+          <div style="color:#e2e8f0; font-weight:600;">
+            Demanda U.V.E.: <span style="color:${risk.color};">${zone.uveDemanda ?? clasif.etiquetaDemanda}</span>
+          </div>
         </div>
       </div>
     `;
@@ -655,9 +762,12 @@ export class MapService {
 
   private lastCycleIndex = -1;
 
-  private syncCycleState(): void {
+  public syncCycleState(): void {
     if (this.getActiveManualZones) {
       const liveManualIds = this.getActiveManualZones();
+      for (const id of liveManualIds) {
+        this.manualActiveZoneIds.add(id);
+      }
       for (const id of Array.from(this.manualActiveZoneIds)) {
         if (!liveManualIds.has(id)) {
           this.manualActiveZoneIds.delete(id);
@@ -666,10 +776,9 @@ export class MapService {
       }
     }
 
-    if (!this.settings.bucleZonasActivo()) {
-      // Modo Manual: zonas fijadas por el operador en Ajustes + zonas asignadas manualmente a patrullas
-      const manualIds = new Set([
-        ...this.settings.zonasManuales(),
+    if (!this.autoRotationEnabled()) {
+      // Modo Manual: solo zonas asignadas manualmente a patrullas (sin rotación automática)
+      const manualIds = new Set<number>([
         ...this.manualActiveZoneIds,
       ]);
       const selected = HOTSPOT_ZONES.filter(z => manualIds.has(z.id));
@@ -680,7 +789,7 @@ export class MapService {
         currentRenderedIds.size !== manualIds.size ||
         [...manualIds].some(id => !currentRenderedIds.has(id));
 
-      if (changed) {
+      if (changed && this.map) {
         this.currentActiveIds = manualIds;
         this.activeZones.set(selected);
         this.heatOverlay.setActiveZones(selected);
@@ -707,6 +816,10 @@ export class MapService {
       stored = null;
     }
 
+    const allStoredExistInHotspots =
+      Array.isArray(stored?.activeZoneIds) &&
+      stored.activeZoneIds.every((id: number) => HOTSPOT_ZONES.some(hz => hz.id === id));
+
     // Si estamos en el MISMO ciclo, con el mismo intervalo y cantidad de zonas:
     // MANTENER Y RESTAURAR EXACTAMENTE LAS MISMAS ZONAS ACTIVAS (¡no deben cambiar al recargar la página!)
     if (
@@ -716,6 +829,7 @@ export class MapService {
       stored.cantidadZonas === countZonas &&
       Array.isArray(stored.activeZoneIds) &&
       stored.activeZoneIds.length === countZonas &&
+      allStoredExistInHotspots &&
       !stored.activeZoneIds.some((id: number) => this.manualActiveZoneIds.has(id))
     ) {
       const savedIds = new Set<number>([
@@ -736,20 +850,16 @@ export class MapService {
         this.heatOverlay.setActiveZones(selected);
         this.updateHotspotCircles(selected);
         this.updateZoneMarkersState(savedIds);
-        return;
-      } else {
-        return;
       }
+      return;
     }
 
-    // Si el ciclo cambió (el temporizador llegó a 0) o cambió la configuración de ajustes:
-    if (this.lastCycleIndex !== cycleIndex) {
-      this.lastCycleIndex = cycleIndex;
-      const previousIds = stored?.activeZoneIds
-        ? new Set<number>(stored.activeZoneIds)
-        : new Set<number>(this.currentActiveIds);
-      this.applyCycle(cycleIndex, previousIds, CYCLE_SECS, countZonas);
-    }
+    // Si el ciclo cambió, o cambió la cantidad de zonas en Configuración, o se sincronizaron zonas nuevas:
+    this.lastCycleIndex = cycleIndex;
+    const previousIds = stored?.activeZoneIds
+      ? new Set<number>(stored.activeZoneIds)
+      : new Set<number>(this.currentActiveIds);
+    this.applyCycle(cycleIndex, previousIds, CYCLE_SECS, countZonas);
   }
 
   /** Selección determinística garantizando representación de delitos Altos, Medios y Bajos según la cantidad configurada (1 a 5 zonas),
@@ -766,9 +876,19 @@ export class MapService {
       ? candidateZones
       : (candidateZones.length > 0 ? candidateZones : allZones);
 
-    const highZones   = poolZones.filter(z => z.crimeCount >= 7);
-    const mediumZones = poolZones.filter(z => z.crimeCount >= 4 && z.crimeCount < 7);
-    const lowZones    = poolZones.filter(z => z.crimeCount < 4);
+    const calcAntiFixationScore = (z: HotspotZone): number => {
+      const gravedad = z.score_gravedad ?? z.crimeCount * 10;
+      const minutosHoy = z.minutos_patrullados_hoy ?? 0;
+      return gravedad / (1 + 0.02 * minutosHoy);
+    };
+
+    const sortedPool = [...poolZones].sort((a, b) => calcAntiFixationScore(b) - calcAntiFixationScore(a));
+    const highZones = sortedPool.filter(z => (z.score_gravedad ?? z.crimeCount * 10) > 80 || z.crimeCount >= 7);
+    const mediumZones = sortedPool.filter(z => {
+      const s = z.score_gravedad ?? z.crimeCount * 10;
+      return (s >= 40 && s <= 80) || (z.crimeCount >= 4 && z.crimeCount < 7);
+    });
+    const lowZones = sortedPool.filter(z => (z.score_gravedad ?? z.crimeCount * 10) < 40 && z.crimeCount < 4);
 
     const pickFromPool = (pool: HotspotZone[], pickedIds: Set<number>): HotspotZone | null => {
       // 1. Zonas del pool que no estén en la rotación previa, no hayan sido tomadas en este ciclo y no sean manuales
@@ -962,7 +1082,7 @@ export class MapService {
           });
         }
       }
-    } catch {}
+    } catch { }
     this.manualActiveZoneIds.forEach(id => {
       if (id !== zoneId) targetIds.add(id);
     });
@@ -1002,7 +1122,7 @@ export class MapService {
           stored.activeZoneIds.forEach((id: number) => targetIds.add(id));
         }
       }
-    } catch {}
+    } catch { }
     this.manualActiveZoneIds.forEach(id => targetIds.add(id));
 
     const needsUpdate =
@@ -1031,12 +1151,24 @@ export class MapService {
     this.updateZoneMarkersState(this.currentActiveIds);
   }
 
+  activateRotatedZonesOnMap(zoneIds: number[]): void {
+    const newSet = new Set<number>([...zoneIds, ...this.manualActiveZoneIds]);
+    this.currentActiveIds = newSet;
+    const selected = HOTSPOT_ZONES.filter(z => newSet.has(z.id));
+    this.activeZones.set(selected);
+    this.heatOverlay.setActiveZones(selected);
+    this.updateHotspotCircles(selected);
+    this.updateZoneMarkersState(newSet);
+  }
+
   upsertUnitMarker(sesion: SesionOperativa): void {
     const coords = sesion.coordenadas_rt;
     if (!coords || !this._AdvancedMarker || !this.map) return;
     const key = sesion.imei_simcard;
     const pos = new google.maps.LatLng(coords.lat, coords.lng);
     const config = ESTADO_CONFIG[sesion.estado_operativo] || ESTADO_CONFIG[EstadoOperativo.DISPONIBLE];
+    const uveInfo = calcularUveSesion(sesion);
+    const tooltipText = `${sesion.identificador_unidad} [${uveInfo.tipoMedio}] · ${uveInfo.nombreMedio} · Dotación: ${uveInfo.dotacionTotal} func. · Carga: ${uveInfo.valorUve.toFixed(2)} U.V.E.`;
 
     if (this.markerRefs.has(key)) {
       const m = this.markerRefs.get(key);
@@ -1044,24 +1176,27 @@ export class MapService {
       if (typeof m.getMap === 'function' && m.getMap() !== this.map) {
         m.setMap(this.layerSimcards() ? this.map : null);
       }
-      if ((m as any).__estado !== sesion.estado_operativo) {
-        (m as any).__estado = sesion.estado_operativo;
+      const sig = `${sesion.estado_operativo}-${uveInfo.tipoMedio}-${uveInfo.valorUve}`;
+      if ((m as any).__estado !== sig) {
+        (m as any).__estado = sig;
         if ((m as any)._el) {
-          (m as any)._el.innerHTML = this.buildMarkerSvg(config.dotColor, sesion.tipo_transporte);
+          (m as any)._el.innerHTML = this.buildMarkerSvg(config.dotColor, uveInfo.tipoMedio, uveInfo.valorUve, uveInfo.dotacionTotal);
+          (m as any)._el.title = tooltipText;
         }
       }
     } else {
       const el = document.createElement('div');
-      el.innerHTML = this.buildMarkerSvg(config.dotColor, sesion.tipo_transporte);
-      el.title = sesion.conductor?.nombre_completo ?? sesion.rut_conductor;
+      el.innerHTML = this.buildMarkerSvg(config.dotColor, uveInfo.tipoMedio, uveInfo.valorUve, uveInfo.dotacionTotal);
+      el.title = tooltipText;
       const marker = new this._AdvancedMarker({
         map: this.layerSimcards() ? this.map : null,
         position: pos,
         content: el,
+        title: tooltipText,
         zIndex: 20,
       });
       (marker as any).__idSesion = sesion.id_sesion;
-      (marker as any).__estado = sesion.estado_operativo;
+      (marker as any).__estado = `${sesion.estado_operativo}-${uveInfo.tipoMedio}-${uveInfo.valorUve}`;
       el.addEventListener('click', () => this.onMarkerClick?.(sesion.id_sesion));
       this.markerRefs.set(key, marker);
     }
@@ -1182,10 +1317,23 @@ export class MapService {
   }
 
   syncDatabaseZones(zonas: ZonaPatrullaje[]): void {
+    const prevSignature = HOTSPOT_ZONES.map(z => `${z.id}:${z.scoreGravedad}:${z.radio_m}`).join('|');
     syncDatabaseZones(zonas);
+    const nextSignature = HOTSPOT_ZONES.map(z => `${z.id}:${z.scoreGravedad}:${z.radio_m}`).join('|');
+    this.syncCycleState();
     if (this.map && this._AdvancedMarker) {
-      this.initZoneMarkers();
+      if (prevSignature !== nextSignature || this.zoneMarkers.length !== HOTSPOT_ZONES.length) {
+        this.initZoneMarkers();
+      }
       this.updateZoneMarkersState(this.currentActiveIds);
+      if (this.currentActiveIds.size > 0) {
+        const refreshed = HOTSPOT_ZONES.filter(z => this.currentActiveIds.has(z.id));
+        if (prevSignature !== nextSignature || this.activeZones().length !== refreshed.length) {
+          this.activeZones.set(refreshed);
+          this.heatOverlay.setActiveZones(refreshed);
+          this.updateHotspotCircles(refreshed);
+        }
+      }
     }
   }
 
@@ -1218,23 +1366,35 @@ export class MapService {
 
   // ─── Marcadores de Patrullas (SVG sin emojis) ─────────────────────────────
 
-  addFicticiaMarker(id: string, lat: number, lng: number, tipo: string, estado: 'DISPONIBLE' | 'EN_RUTA' | 'PATRULLANDO'): void {
+  addFicticiaMarker(
+    id: string,
+    lat: number,
+    lng: number,
+    tipo: string,
+    estado: 'DISPONIBLE' | 'EN_RUTA' | 'PATRULLANDO',
+    valorUve?: number,
+    dotacionTotal?: number
+  ): void {
     if (!this._AdvancedMarker) return;
     const color = this._ficticiaColor(estado);
-    const el    = document.createElement('div');
-    el.innerHTML = this._buildFicticiaMarkerHtml(color, tipo, estado);
+    const el = document.createElement('div');
+    const uve = valorUve ?? (tipo === 'RPT' || tipo === 'FZ' || tipo === 'FURGON_Z' ? 1.00 : tipo === 'RPD' || tipo === 'PATRULLA' ? 0.80 : tipo === 'MTT' || tipo === 'MOTO' ? 0.45 : tipo === 'CB' || tipo === 'BICICLETA' ? 0.30 : 0.20);
+    const dotacion = dotacionTotal ?? (tipo === 'RPT' ? 3 : tipo === 'FZ' || tipo === 'FURGON_Z' || tipo === 'RPD' ? 2 : 1);
+    const tooltip = `Patrulla [${tipo}] · Dotación: ${dotacion} func. · ${uve.toFixed(2)} U.V.E.`;
+    el.innerHTML = this._buildFicticiaMarkerHtml(color, tipo, estado, uve, dotacion);
+    el.title = tooltip;
     el.addEventListener('click', (ev) => {
       ev.stopPropagation();
       this.onFicticiaClick?.(id);
     });
     this.ficticiaEls.set(id, el);
-    this.ficticiaTypes.set(id, tipo);
+    this.ficticiaTypes.set(id, `${tipo}|${uve}|${dotacion}`);
     const marker = new this._AdvancedMarker({
-      map:      this.map,
+      map: this.map,
       position: new google.maps.LatLng(lat, lng),
-      content:  el,
-      title:    `Patrulla operativa`,
-      zIndex:   10,
+      content: el,
+      title: tooltip,
+      zIndex: 10,
     });
     this.ficticiaRefs.set(id, marker);
   }
@@ -1245,11 +1405,14 @@ export class MapService {
   }
 
   updateFicticiaMarkerColor(id: string, estado: 'DISPONIBLE' | 'EN_RUTA' | 'PATRULLANDO'): void {
-    const el    = this.ficticiaEls.get(id);
+    const el = this.ficticiaEls.get(id);
     if (!el) return;
-    const tipo  = this.ficticiaTypes.get(id) ?? 'PATRULLA';
+    const meta = (this.ficticiaTypes.get(id) ?? 'RPD|0.8|2').split('|');
+    const tipo = meta[0] || 'RPD';
+    const uve = Number(meta[1] || 0.8);
+    const dot = Number(meta[2] || 2);
     const color = this._ficticiaColor(estado);
-    el.innerHTML = this._buildFicticiaMarkerHtml(color, tipo, estado);
+    el.innerHTML = this._buildFicticiaMarkerHtml(color, tipo, estado, uve, dot);
   }
 
   removeFicticiaMarker(id: string): void {
@@ -1264,54 +1427,118 @@ export class MapService {
 
   private _ficticiaColor(estado: 'DISPONIBLE' | 'EN_RUTA' | 'PATRULLANDO'): string {
     return estado === 'DISPONIBLE' ? '#80B918'
-         : estado === 'EN_RUTA'    ? '#2563eb'
-         : '#d97706';
+      : estado === 'EN_RUTA' ? '#2563eb'
+        : '#d97706';
   }
 
   private _getTransportIconName(tipo: string): string {
     switch (tipo) {
-      case 'MOTO':      return 'moto';
-      case 'BICICLETA': return 'bici';
-      case 'INFANTERIA':return 'peaton';
-      default:          return 'auto';
+      case 'FURGON_Z':
+      case 'FZ':
+        return 'furgon';
+      case 'MOTO':
+      case 'MTT':
+        return 'moto';
+      case 'BICICLETA':
+      case 'CB':
+        return 'bici';
+      case 'INFANTERIA':
+      case 'INF':
+        return 'peaton';
+      default:
+        return 'auto';
     }
   }
 
-  private _buildFicticiaMarkerHtml(color: string, tipo: string, estado: 'DISPONIBLE' | 'EN_RUTA' | 'PATRULLANDO'): string {
+  private _resolveMedioTag(tipo: string): string {
+    const raw = (tipo || '').toUpperCase();
+    if (raw === 'FURGON_Z' || raw === 'FZ') return 'FZ';
+    if (raw === 'RPT') return 'RPT';
+    if (raw === 'RPD' || raw === 'PATRULLA') return 'RPD';
+    if (raw === 'MOTO' || raw === 'MTT') return 'MTT';
+    if (raw === 'BICICLETA' || raw === 'CB') return 'CB';
+    if (raw === 'INFANTERIA' || raw === 'INF') return 'INF';
+    return raw || 'RPD';
+  }
+
+  private _buildFicticiaMarkerHtml(
+    color: string,
+    tipo: string,
+    estado: 'DISPONIBLE' | 'EN_RUTA' | 'PATRULLANDO',
+    valorUve: number = 0.80,
+    dotacionTotal: number = 2
+  ): string {
     const iconName = this._getTransportIconName(tipo);
+    const tag = this._resolveMedioTag(tipo);
     const svg = getIconSvg(iconName, color, 18, 1.8);
     const pulse = estado === 'EN_RUTA' ? `animation:sos-pulse 1.2s ease-in-out infinite;` : '';
-    const ring  = estado === 'EN_RUTA' ? `<div style="position:absolute;inset:-6px;border-radius:50%;border:2px solid ${color};opacity:0.4;${pulse}"></div>` : '';
+    const ring = estado === 'EN_RUTA' ? `<div style="position:absolute;inset:-6px;border-radius:50%;border:2px solid ${color};opacity:0.4;${pulse}"></div>` : '';
 
     return `
-      <div style="position:relative;">
-        ${ring}
+      <div style="position:relative; display:flex; flex-direction:column; align-items:center;" title="${tag} · ${dotacionTotal} func. · ${valorUve.toFixed(2)} U.V.E.">
+        <div style="
+          background:#0f172a;
+          color:#ffffff;
+          border:1px solid ${color};
+          font-family:'Inter',sans-serif;
+          font-size:9px;
+          font-weight:800;
+          padding:1px 5px;
+          border-radius:6px;
+          margin-bottom:2px;
+          white-space:nowrap;
+          box-shadow:0 1px 4px rgba(0,0,0,0.4);
+        ">${tag} · ${valorUve.toFixed(2)}</div>
+        <div style="position:relative;">
+          ${ring}
+          <div style="
+            background:var(--sigo-surface, #ffffff);
+            border:2px solid ${color};
+            border-radius:50%;
+            width:36px; height:36px;
+            display:flex; align-items:center; justify-content:center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+            cursor:pointer;
+            transition:all 0.25s ease;
+          ">${svg}</div>
+        </div>
+      </div>`;
+  }
+
+  private buildMarkerSvg(
+    color: string,
+    tipo: string,
+    valorUve: number = 0.80,
+    dotacionTotal: number = 2
+  ): string {
+    const iconName = this._getTransportIconName(tipo);
+    const tag = this._resolveMedioTag(tipo);
+    const svg = getIconSvg(iconName, color, 18, 1.8);
+    return `
+      <div style="position:relative; display:flex; flex-direction:column; align-items:center;" title="${tag} · Dotación: ${dotacionTotal} · ${valorUve.toFixed(2)} U.V.E.">
+        <div style="
+          background:#0f172a;
+          color:#ffffff;
+          border:1px solid ${color};
+          font-family:'Inter',sans-serif;
+          font-size:9px;
+          font-weight:800;
+          padding:1px 5px;
+          border-radius:6px;
+          margin-bottom:2px;
+          white-space:nowrap;
+          box-shadow:0 1px 4px rgba(0,0,0,0.4);
+        ">${tag} · ${valorUve.toFixed(2)}</div>
         <div style="
           background:var(--sigo-surface, #ffffff);
           border:2px solid ${color};
           border-radius:50%;
           width:36px; height:36px;
           display:flex; align-items:center; justify-content:center;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+          box-shadow:0 2px 10px rgba(0,0,0,0.25);
           cursor:pointer;
-          transition:all 0.25s ease;
+          transition:transform 0.2s;
         ">${svg}</div>
       </div>`;
-  }
-
-  private buildMarkerSvg(color: string, tipo: string): string {
-    const iconName = this._getTransportIconName(tipo);
-    const svg = getIconSvg(iconName, color, 18, 1.8);
-    return `
-      <div style="
-        background:var(--sigo-surface, #ffffff);
-        border:2px solid ${color};
-        border-radius:50%;
-        width:36px; height:36px;
-        display:flex; align-items:center; justify-content:center;
-        box-shadow:0 2px 10px rgba(0,0,0,0.25);
-        cursor:pointer;
-        transition:transform 0.2s;
-      ">${svg}</div>`;
   }
 }

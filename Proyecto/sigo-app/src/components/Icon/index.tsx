@@ -121,6 +121,15 @@ const P = {
       <Circle cx="16" cy="14" r=".5" />
     </>
   ),
+  furgon: (
+    <>
+      <Rect x="2" y="6" width="15" height="10" rx="2" />
+      <Path d="M17 9h3l2 3v4h-5V9z" />
+      <Circle cx="6.5" cy="17" r="2" />
+      <Circle cx="17.5" cy="17" r="2" />
+      <Path d="M7 9v4M5 11h4" />
+    </>
+  ),
   moto: (
     <>
       <Circle cx="6" cy="16" r="3" />

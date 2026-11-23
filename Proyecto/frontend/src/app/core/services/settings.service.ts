@@ -54,6 +54,14 @@ export class SettingsService {
     })()
   );
 
+  // U.V.E. objetivo configurable para atender alertas SOS (ej: 0.80, 1.00, 1.50, 2.00)
+  readonly uveSosObjetivo = signal<number>(
+    (() => {
+      const saved = Number(localStorage.getItem('sigo_uve_sos_objetivo'));
+      return saved >= 0.45 && saved <= 5 ? saved : 1.00;
+    })()
+  );
+
   // 3. Tiempo Límite de Traslado / Llegada al Destino (ETA):
   // Minutos que puede tardar un funcionario en llegar (15, 20, 30 o manual)
   readonly tiempoLlegadaMin = signal<number>(
@@ -85,6 +93,9 @@ export class SettingsService {
     });
     effect(() => {
       localStorage.setItem('sigo_recursos_sos', String(this.recursosSos()));
+    });
+    effect(() => {
+      localStorage.setItem('sigo_uve_sos_objetivo', String(this.uveSosObjetivo()));
     });
     effect(() => {
       localStorage.setItem('sigo_tiempo_llegada_min', String(this.tiempoLlegadaMin()));

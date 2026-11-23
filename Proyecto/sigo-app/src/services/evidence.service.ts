@@ -60,7 +60,8 @@ export async function uploadEvidenceAsset(
   asset: ImagePicker.ImagePickerAsset,
   description: string,
   tipoEvidencia: string = 'EVIDENCIA_BASICA',
-  coords?: { latitude: number; longitude: number }
+  coords?: { latitude: number; longitude: number },
+  idAsignacion?: number
 ) {
   const isVideo =
     asset.type === 'video' ||
@@ -80,6 +81,9 @@ export async function uploadEvidenceAsset(
 
   formData.append('descripcion_texto', description);
   formData.append('tipo_evidencia', tipoEvidencia);
+  if (idAsignacion != null) {
+    formData.append('id_asignacion', String(idAsignacion));
+  }
 
   if (coords) {
     formData.append('latitude', String(coords.latitude));

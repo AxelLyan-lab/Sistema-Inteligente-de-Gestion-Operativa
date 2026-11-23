@@ -12,13 +12,13 @@ import { ApiService } from '../../core/services/api.service';
 import { SupabaseService } from '../../core/services/supabase.service';
 import {
   SesionOperativa, EstadoOperativo, TipoTransporte,
-  ESTADO_CONFIG, EstadoConfig,
+  ESTADO_CONFIG, EstadoConfig, calcularUveSesion,
 } from '../../core/models';
 
 @Component({
-  selector:        'app-units',
-  standalone:      true,
-  imports:         [CommonModule, RouterModule, FormsModule, NavbarComponent, IconComponent, DispatchModalComponent],
+  selector: 'app-units',
+  standalone: true,
+  imports: [CommonModule, RouterModule, FormsModule, NavbarComponent, IconComponent, DispatchModalComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
   <div class="min-h-screen bg-sigo-bg text-sigo-text flex flex-col select-none">
@@ -40,6 +40,9 @@ import {
         </div>
 
         <div class="flex items-center gap-3">
+          <span class="px-3 py-1.5 bg-sigo-accent/15 border border-sigo-accent/40 rounded-lg text-sigo-accent text-xs font-bold">
+            U.V.E total disponible: {{ totalUveActiva() | number:'1.2-2' }}
+          </span>
           <span class="px-3 py-1.5 bg-sigo-surface border border-sigo-border rounded-lg text-sigo-muted text-xs font-medium">
             {{ sesionesFiltradas().length }} sesiones activas
           </span>
@@ -50,8 +53,8 @@ import {
         </div>
       </div>
 
-      <!-- Tarjetas de resumen -->
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <!-- Tarjetas de resumen (sin Inactivos) -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         @for (est of estadosResumen; track est.estado) {
           <div
             class="card text-center cursor-pointer hover:border-sigo-accent/40 transition-all p-3"
@@ -87,14 +90,16 @@ import {
           <label class="text-sigo-muted font-medium">Transporte:</label>
           <select
             id="filter-transporte"
-            class="input-field py-1.5 text-xs w-32"
+            class="input-field py-1.5 text-xs w-36"
             [ngModel]="filtroTransporte()"
             (ngModelChange)="filtroTransporte.set($event)"
           >
             <option value="">Todos</option>
-            <option value="PATRULLA">Patrulla</option>
-            <option value="MOTO">Moto</option>
-            <option value="BICICLETA">Bicicleta</option>
+            <option value="PATRULLA">Radiopatrulla (RPT/RPD)</option>
+            <option value="FURGON_Z">Furgón Z (FZ)</option>
+            <option value="MOTO">Moto TT (MTT)</option>
+            <option value="BICICLETA">Bicicleta (CB)</option>
+            <option value="INFANTERIA">Infantería (INF)</option>
           </select>
         </div>
 
@@ -176,10 +181,16 @@ import {
                       </div>
                     </td>
                     <td class="px-4 py-3">
-                      <span class="flex items-center gap-1.5 text-sigo-text">
-                        <app-icon [name]="getTransportIcon(sesion.tipo_transporte)" [size]="16" color="var(--sigo-accent)"></app-icon>
-                        <span class="text-[11px] text-sigo-muted">{{ sesion.tipo_transporte }}</span>
-                      </span>
+                      <div class="flex flex-col gap-1">
+                        <span class="flex items-center gap-1.5 text-sigo-text">
+                          <app-icon [name]="getTransportIcon(sesion.tipo_transporte)" [size]="16" color="var(--sigo-accent)"></app-icon>
+                          <span class="text-[11px] font-bold text-sigo-text">{{ getUve(sesion).tipoMedio }}</span>
+                          <span class="text-[10px] text-sigo-muted">({{ sesion.tipo_transporte }})</span>
+                        </span>
+                        <span class="inline-flex w-fit items-center px-1.5 py-0.5 rounded bg-sigo-accent/15 text-sigo-accent border border-sigo-accent/30 text-[10px] font-extrabold">
+                          {{ getUve(sesion).valorUve | number:'1.2-2' }} U.V.E.
+                        </span>
+                      </div>
                     </td>
                     <td class="px-4 py-3">
                       <span class="flex items-center gap-1.5">
@@ -379,16 +390,16 @@ import {
   `,
 })
 export class UnitsComponent implements OnInit, OnDestroy {
-  private readonly apiService      = inject(ApiService);
+  private readonly apiService = inject(ApiService);
   private readonly supabaseService = inject(SupabaseService);
-  private readonly router          = inject(Router);
+  private readonly router = inject(Router);
 
-  readonly cargando  = signal(false);
-  readonly sesiones  = signal<SesionOperativa[]>([]);
+  readonly cargando = signal(false);
+  readonly sesiones = signal<SesionOperativa[]>([]);
 
-  readonly filtroEstado     = signal('');
+  readonly filtroEstado = signal('');
   readonly filtroTransporte = signal('');
-  readonly filtroTexto      = signal('');
+  readonly filtroTexto = signal('');
 
   sesionSeleccionadaParaDespacho: SesionOperativa | null = null;
   sesionParaTripulacion: SesionOperativa | null = null;
@@ -396,15 +407,17 @@ export class UnitsComponent implements OnInit, OnDestroy {
   private subSesiones?: any;
   private subTripulacion?: any;
 
-  readonly estadosResumen = Object.values(EstadoOperativo).map(e => ({
-    estado: e, config: ESTADO_CONFIG[e],
-  }));
+  readonly estadosResumen = Object.values(EstadoOperativo)
+    .filter(e => e !== EstadoOperativo.INACTIVO)
+    .map(e => ({
+      estado: e, config: ESTADO_CONFIG[e],
+    }));
 
   readonly sesionesFiltradas = computed(() =>
     this.sesiones().filter(s => {
       const matchEstado = !this.filtroEstado() || s.estado_operativo === this.filtroEstado();
-      const matchTrans  = !this.filtroTransporte() || s.tipo_transporte === this.filtroTransporte();
-      const matchText   = !this.filtroTexto() ||
+      const matchTrans = !this.filtroTransporte() || s.tipo_transporte === this.filtroTransporte();
+      const matchText = !this.filtroTexto() ||
         s.rut_conductor.toLowerCase().includes(this.filtroTexto().toLowerCase()) ||
         (s.conductor?.nombre_completo ?? '').toLowerCase().includes(this.filtroTexto().toLowerCase()) ||
         (s.identificador_unidad ?? '').toLowerCase().includes(this.filtroTexto().toLowerCase());
@@ -412,7 +425,19 @@ export class UnitsComponent implements OnInit, OnDestroy {
     })
   );
 
-  conteo     = (estado: EstadoOperativo) => this.sesiones().filter(s => s.estado_operativo === estado).length;
+  readonly totalUveActiva = computed(() =>
+    Number(
+      this.sesionesFiltradas()
+        .reduce((acc, s) => acc + this.getUve(s).valorUve, 0)
+        .toFixed(2)
+    )
+  );
+
+  getUve(s: SesionOperativa) {
+    return calcularUveSesion(s);
+  }
+
+  conteo = (estado: EstadoOperativo) => this.sesiones().filter(s => s.estado_operativo === estado).length;
   estadoConf = (estado?: any): EstadoConfig =>
     ESTADO_CONFIG[estado as EstadoOperativo] || ESTADO_CONFIG[EstadoOperativo.DISPONIBLE];
 
@@ -519,10 +544,20 @@ export class UnitsComponent implements OnInit, OnDestroy {
 
   getTransportIcon(tipo?: string): string {
     switch (tipo) {
-      case 'MOTO': return 'moto';
-      case 'BICICLETA': return 'bici';
-      case 'INFANTERIA': return 'peaton';
-      default: return 'auto';
+      case 'FURGON_Z':
+      case 'FZ':
+        return 'furgon';
+      case 'MOTO':
+      case 'MTT':
+        return 'moto';
+      case 'BICICLETA':
+      case 'CB':
+        return 'bici';
+      case 'INFANTERIA':
+      case 'INF':
+        return 'peaton';
+      default:
+        return 'auto';
     }
   }
 }

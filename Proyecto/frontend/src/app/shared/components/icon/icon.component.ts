@@ -30,6 +30,7 @@ export type IconName =
   | 'id'
   | 'lista'
   | 'auto'
+  | 'furgon'
   | 'moto'
   | 'bici'
   | 'peaton'
@@ -76,6 +77,7 @@ const ICON_PATHS: Record<string, string> = {
   id: `<rect x="3" y="5" width="18" height="14" rx="3"/><circle cx="9" cy="11" r="2"/><path d="M6.5 16c.4-1.5 1.5-2 2.5-2s2.1.5 2.5 2M14 10h4M14 14h3"/>`,
   lista: `<rect x="5" y="4" width="14" height="17" rx="3"/><path d="M9 4V3h6v1M9 11h6M9 15h4"/>`,
   auto: `<path d="M4 16v-4l2-5h12l2 5v4z"/><path d="M4 12h16M7 16v2M17 16v2"/><circle cx="8" cy="14" r=".5"/><circle cx="16" cy="14" r=".5"/>`,
+  furgon: `<rect x="2" y="6" width="15" height="10" rx="2"/><path d="M17 9h3l2 3v4h-5V9z"/><circle cx="6.5" cy="17" r="2"/><circle cx="17.5" cy="17" r="2"/><path d="M7 9v4M5 11h4"/>`,
   moto: `<circle cx="6" cy="16" r="3"/><circle cx="18" cy="16" r="3"/><path d="M6 16l4-7h4l4 7M10 9L8 6H6M14 9h3"/>`,
   bici: `<circle cx="6" cy="16" r="3.5"/><circle cx="18" cy="16" r="3.5"/><path d="M6 16l4-8h6l2 8M10 8L12 16M9 6h3"/>`,
   peaton: `<circle cx="13" cy="4.5" r="1.8"/><path d="M9 21l2.5-6-2-3 1.5-4 3.5 2 2.5 2M11.5 15l4 6M11 8.5L8 11"/>`,

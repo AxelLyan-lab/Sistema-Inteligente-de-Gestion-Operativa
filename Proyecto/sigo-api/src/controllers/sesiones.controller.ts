@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabaseAdmin } from '../config/supabase';
+import { resolverTipoMedio, CONFIG_MEDIOS_UVE } from '../utils/uve.utils';
 
 /**
  * GET /api/v1/sesiones/activas
@@ -52,13 +53,21 @@ export async function getSesionesActivas(
 
     if (error) throw error;
 
-    // Filtrar: asignación activa = la que no está COMPLETADA/CANCELADA
-    const sesiones = (data ?? []).map((s: any) => ({
-      ...s,
-      asignacion_activa: s.asignacion_activa?.find(
-        (a: any) => !['COMPLETADA', 'CANCELADA'].includes(a.estado_mision)
-      ) ?? null,
-    }));
+    // Filtrar: asignación activa = la que no está COMPLETADA/CANCELADA y calcular U.V.E.
+    const sesiones = (data ?? []).map((s: any) => {
+      const numAcompanantes = Array.isArray(s.tripulacion) ? s.tripulacion.length : 0;
+      const esFurgonZ = String(s.identificador_unidad || '').toUpperCase().startsWith('FZ') || s.tipo_transporte === 'FURGON_Z' || s.tipo_medio === 'FZ';
+      const tipoMedio = s.tipo_medio || resolverTipoMedio(esFurgonZ ? 'FURGON_Z' : s.tipo_transporte, numAcompanantes);
+      const valorUve = s.valor_uve != null ? Number(s.valor_uve) : CONFIG_MEDIOS_UVE[tipoMedio].valorUve;
+      return {
+        ...s,
+        tipo_medio: tipoMedio,
+        valor_uve: valorUve,
+        asignacion_activa: s.asignacion_activa?.find(
+          (a: any) => !['COMPLETADA', 'CANCELADA'].includes(a.estado_mision)
+        ) ?? null,
+      };
+    });
 
     res.json(sesiones);
   } catch (err) {
@@ -112,7 +121,16 @@ export async function getSesionDetalle(
       return;
     }
 
-    res.json(data);
+    const numAcompanantes = Array.isArray((data as any).tripulacion) ? (data as any).tripulacion.length : 0;
+    const esFurgonZ = String((data as any).identificador_unidad || '').toUpperCase().startsWith('FZ') || (data as any).tipo_transporte === 'FURGON_Z';
+    const tipoMedio = (data as any).tipo_medio || resolverTipoMedio(esFurgonZ ? 'FURGON_Z' : (data as any).tipo_transporte, numAcompanantes);
+    const valorUve = (data as any).valor_uve != null ? Number((data as any).valor_uve) : CONFIG_MEDIOS_UVE[tipoMedio].valorUve;
+
+    res.json({
+      ...data,
+      tipo_medio: tipoMedio,
+      valor_uve: valorUve,
+    });
   } catch (err) {
     next(err);
   }

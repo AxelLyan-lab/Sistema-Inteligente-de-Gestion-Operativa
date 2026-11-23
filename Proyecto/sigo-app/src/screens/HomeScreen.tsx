@@ -20,22 +20,24 @@ import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useAuth } from '../context/AuthContext';
 import PatrolCrewList from '../components/PatrolCrewList';
-import EmergencyConfirmModal from '../components/EmergencyConfirmModal';
+import EmergencyConfirmModal, { UnidadRefuerzoAsignada } from '../components/EmergencyConfirmModal';
 import NotificationBanner from '../components/NotificationBanner';
 import GnssStatusPanel, { EstadoBarra } from '../components/GnssStatusPanel';
 import {
   captureGnssReading,
   sendGnssTelemetry,
   GnssReading,
+  ZonaRiesgoActiva,
 } from '../services/gnss.service';
 import { requestReinforcements, getMessages, MensajeChat } from '../services/patrol.service';
+import apiClient from '../services/apiClient';
 import { getCrew, getActiveAssignment, markAssignmentArrived, AsignacionMision } from '../services/patrol.service';
 import { playSosSound, playMessageSound } from '../services/sound.service';
 import { useNavigation } from '@react-navigation/native';
 import { useMessageBadge, messageBadgeStore } from '../services/messageBadge.service';
 import { Spacing, BorderRadius, Fonts, ThemeColors } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
-import { TripulacionMiembro, Notificacion, Coordenadas } from '../types';
+import { TripulacionMiembro, Notificacion, Coordenadas, calcularUveMovil } from '../types';
 
 const { height } = Dimensions.get('window');
 const MAP_HEIGHT = height * 0.40;
@@ -78,11 +80,17 @@ export default function HomeScreen() {
   const [isLocating, setIsLocating] = useState(true);
   const [txOk, setTxOk] = useState<boolean | null>(null);
 
-  // ── Estado operativo ──────────────────────────────────────────────────────
+  // ── Estado operativo y U.V.E. ─────────────────────────────────────────────
   const [crew, setCrew] = useState<TripulacionMiembro[]>([]);
   const [showSosModal, setShowSosModal] = useState(false);
   const [sosConfirmed, setSosConfirmed] = useState(false);
+  const [sosActivoEnCurso, setSosActivoEnCurso] = useState(false);
+  const [sosResueltaReciente, setSosResueltaReciente] = useState(false);
+  const prevSosActivoRef = useRef(false);
   const [sosLoading, setSosLoading] = useState(false);
+  const [sosUveSolicitada, setSosUveSolicitada] = useState<number>(1.0);
+  const [sosUnidadesAsignadas, setSosUnidadesAsignadas] = useState<UnidadRefuerzoAsignada[]>([]);
+  const [activeRiskZone, setActiveRiskZone] = useState<ZonaRiesgoActiva | null>(null);
   const [notification, setNotification] = useState<Notificacion | null>(null);
   const [notifBadgeCount, setNotifBadgeCount] = useState(0);
   const [mission, setMission] = useState<AsignacionMision | null>(null);
@@ -106,8 +114,8 @@ export default function HomeScreen() {
     dispatchCountdown !== null || localEstado === 'EN_CAMINO'
       ? 'EN_CAMINO'
       : localEstado === 'EN_ZONA'
-      ? (zoneInside === false ? 'FUERA_ZONA' : 'EN_ZONA')
-      : 'DISPONIBLE';
+        ? (zoneInside === false ? 'FUERA_ZONA' : 'EN_ZONA')
+        : 'DISPONIBLE';
 
   const handleClearNotifications = () => {
     setNotificationsList([]);
@@ -155,12 +163,13 @@ export default function HomeScreen() {
             );
           }
 
-          // Verificar distancia actual a la zona (tolerancia de 20m para compensar imprecisión GNSS móvil)
+          // Verificar distancia actual a la circunferencia de la zona (límite exacto radio_m)
           const currentDist = coordsRef.current && m.centro_lat != null && m.centro_lng != null
             ? getDistance(coordsRef.current, { latitude: m.centro_lat, longitude: m.centro_lng })
             : 999999;
-          const allowedRadius = Math.max(Number(m.radio_m) || 50, 50) + 20;
+          const allowedRadius = Math.max(20, Number(m.radio_m) || 160);
           const isPhysicallyInside = currentDist <= allowedRadius;
+          setZoneInside(isPhysicallyInside);
 
           // Si ya está físicamente en la zona o ya tenía ingreso previo registrado
           if (m.hora_ingreso_zona || m.estado_mision === 'PATRULLANDO' || isPhysicallyInside) {
@@ -171,7 +180,7 @@ export default function HomeScreen() {
               dispatchTimerRef.current = null;
             }
             if (isPhysicallyInside && !m.hora_ingreso_zona) {
-              markAssignmentArrived(m.id_asignacion).catch(() => {});
+              markAssignmentArrived(m.id_asignacion).catch(() => { });
             }
           } else {
             // Está fuera de la zona: estado EN_CAMINO con cronómetro de cuenta regresiva
@@ -190,12 +199,13 @@ export default function HomeScreen() {
             dispatchTimerRef.current = setInterval(updateCountdown, 1000);
           }
         } else {
-          // Asignación en curso: verificar si el servidor confirmó llegada o si la patrulla ya está físicamente en la zona
+          // Asignación en curso: verificar si el servidor confirmó llegada o si la patrulla está dentro de la circunferencia
           const currentDist = coordsRef.current && m.centro_lat != null && m.centro_lng != null
             ? getDistance(coordsRef.current, { latitude: m.centro_lat, longitude: m.centro_lng })
             : 999999;
-          const allowedRadius = Math.max(Number(m.radio_m) || 50, 50) + 20;
+          const allowedRadius = Math.max(20, Number(m.radio_m) || 160);
           const isPhysicallyInside = currentDist <= allowedRadius;
+          setZoneInside(isPhysicallyInside);
 
           if (m.hora_ingreso_zona || m.estado_mision === 'PATRULLANDO' || isPhysicallyInside) {
             if (localEstadoRef.current !== 'EN_ZONA') {
@@ -207,7 +217,7 @@ export default function HomeScreen() {
                 dispatchTimerRef.current = null;
               }
               if (isPhysicallyInside && !m.hora_ingreso_zona) {
-                markAssignmentArrived(m.id_asignacion).catch(() => {});
+                markAssignmentArrived(m.id_asignacion).catch(() => { });
               }
               const arrivedNotif: Notificacion = {
                 id: 'arrived_' + m.id_asignacion + '_' + Date.now(),
@@ -242,11 +252,12 @@ export default function HomeScreen() {
       setCoords(newCoords);
       setIsLocating(false);
 
-      // Verificación de geocerca inmediata en cada ping de telemetría (cada 5s)
+      // Verificación de circunferencia inmediata en cada ping de telemetría (cada 5s)
       const curMission = missionRef.current;
       if (curMission && curMission.centro_lat != null && curMission.centro_lng != null) {
-        const allowedRadius = Math.max(Number(curMission.radio_m) || 50, 50) + 20;
+        const allowedRadius = Math.max(20, Number(curMission.radio_m) || 160);
         const dist = getDistance(newCoords, { latitude: curMission.centro_lat, longitude: curMission.centro_lng });
+        setZoneInside(dist <= allowedRadius);
         if (dist <= allowedRadius) {
           if (localEstadoRef.current !== 'EN_ZONA') {
             console.log(`[TELEMETRY AUTOGEOFENCE] Llegada detectada en TX a ${curMission.nombre_zona}. Dist: ${Math.round(dist)}m <= ${allowedRadius}m`);
@@ -256,7 +267,7 @@ export default function HomeScreen() {
               clearInterval(dispatchTimerRef.current);
               dispatchTimerRef.current = null;
             }
-            markAssignmentArrived(curMission.id_asignacion).catch(() => {});
+            markAssignmentArrived(curMission.id_asignacion).catch(() => { });
             const arrivedNotif: Notificacion = {
               id: 'arrived_' + curMission.id_asignacion + '_' + Date.now(),
               tipo: 'INFO',
@@ -274,6 +285,11 @@ export default function HomeScreen() {
 
       const result = await sendGnssTelemetry(reading);
       setTxOk(result.ok === true);
+      if (result.en_zona_riesgo && result.zona_riesgo) {
+        setActiveRiskZone(result.zona_riesgo);
+      } else if (result.en_zona_riesgo === false) {
+        setActiveRiskZone(null);
+      }
     } catch {
       setTxOk(false);
     }
@@ -407,27 +423,27 @@ export default function HomeScreen() {
             setCoords(newCoords);
             setIsLocating(false);
 
-            // Geofence check en tiempo real si hay misión activa
+            // Geofence check en tiempo real contra la circunferencia seleccionada si hay misión activa
             if (missionRef.current && missionRef.current.centro_lat != null && missionRef.current.centro_lng != null) {
               const missionCenter = {
                 latitude: missionRef.current.centro_lat,
                 longitude: missionRef.current.centro_lng,
               };
-              const allowedRadius = Math.max(Number(missionRef.current.radio_m) || 50, 50) + 20;
+              const allowedRadius = Math.max(20, Number(missionRef.current.radio_m) || 160);
               const dist = getDistance(newCoords, missionCenter);
               setZoneInside(dist <= allowedRadius);
 
               if (dist <= allowedRadius) {
-                // Si la unidad entra físicamente a la zona
+                // Si la unidad entra físicamente a la circunferencia de la zona
                 if (localEstadoRef.current !== 'EN_ZONA') {
-                  console.log(`[AUTOGEOFENCE] Unidad ingresó a zona ${missionRef.current.nombre_zona}. Distancia: ${Math.round(dist)}m <= ${allowedRadius}m. Transicionando a En Zona.`);
+                  console.log(`[AUTOGEOFENCE] Unidad ingresó a circunferencia ${missionRef.current.nombre_zona}. Distancia: ${Math.round(dist)}m <= ${allowedRadius}m.`);
                   setLocalEstado('EN_ZONA');
                   setDispatchCountdown(null);
                   if (dispatchTimerRef.current) {
                     clearInterval(dispatchTimerRef.current);
                     dispatchTimerRef.current = null;
                   }
-                  markAssignmentArrived(missionRef.current.id_asignacion).catch(() => {});
+                  markAssignmentArrived(missionRef.current.id_asignacion).catch(() => { });
                   const arrivedNotif: Notificacion = {
                     id: 'arrived_' + missionRef.current.id_asignacion,
                     tipo: 'INFO',
@@ -440,13 +456,13 @@ export default function HomeScreen() {
                   setNotifBadgeCount((c) => c + 1);
                 }
                 wasInsideZoneRef.current = true;
-              } else if (dist > (allowedRadius + 20) && wasInsideZoneRef.current) {
-                // Salió de la zona estando dentro (se reinicia para advertir nuevamente si vuelve a salir)
+              } else if (dist > allowedRadius && wasInsideZoneRef.current) {
+                // Salió de la circunferencia estando dentro
                 wasInsideZoneRef.current = false;
                 const outNotif: Notificacion = {
                   id: 'out_zone_' + Date.now(),
                   tipo: 'FUERA_ZONA',
-                  mensaje: 'Has salido de la zona, vuelve al perímetro asignado.',
+                  mensaje: 'Has salido de la circunferencia asignada, vuelve al perímetro de patrullaje.',
                   leida: false,
                   timestamp: new Date(),
                 };
@@ -497,21 +513,63 @@ export default function HomeScreen() {
     );
   };
 
-  // ── SOS / Refuerzos ───────────────────────────────────────────────────────
-  const handleSosConfirm = async () => {
-    if (!coords) {
-      Alert.alert('Sin GPS', 'Esperando señal GPS para emitir las coordenadas de emergencia.');
-      return;
-    }
+  useEffect(() => {
+    let alive = true;
+    const apiBase = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.122:3000/api/v1';
+
+    const syncEstadoZonaYSos = async () => {
+      try {
+        const { data } = await apiClient.get('/patrol/sos/estado');
+        if (!alive || typeof data?.activa !== 'boolean') return;
+
+        const miaActiva = data.activa;
+        if (prevSosActivoRef.current && !miaActiva) {
+          setSosResueltaReciente(true);
+          const resolvedNotif: Notificacion = {
+            id: 'sos_resolved_' + Date.now(),
+            tipo: 'INFO',
+            mensaje: '✅ Emergencia resuelta por el operador de la central.',
+            leida: false,
+            timestamp: new Date(),
+          };
+          setNotificationsList(prev => [resolvedNotif, ...prev]);
+          setNotifBadgeCount(c => c + 1);
+          setTimeout(() => {
+            if (alive) setSosResueltaReciente(false);
+          }, 5000);
+        }
+        prevSosActivoRef.current = miaActiva;
+        setSosActivoEnCurso(miaActiva);
+      } catch { /* ignore */ }
+    };
+
+    syncEstadoZonaYSos();
+    const interval = setInterval(syncEstadoZonaYSos, 3000);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+    };
+  }, [sesion?.id_sesion]);
+
+  // ── SOS / Refuerzos con demanda U.V.E. ────────────────────────────────────
+  const handleSosConfirm = async (uveRequerida: number = 1.0) => {
+    const targetCoords = coords ?? geofenceCenter ?? DEFAULT_COORDS;
     setSosLoading(true);
+    setSosUveSolicitada(uveRequerida);
     try {
-      await requestReinforcements(coords);
+      const res = await requestReinforcements(targetCoords, uveRequerida);
+      const despachadas: UnidadRefuerzoAsignada[] =
+        res?.despacho_uve?.unidades_despachadas ?? [];
+      setSosUnidadesAsignadas(despachadas);
       playSosSound();
       setSosConfirmed(true);
+      prevSosActivoRef.current = true;
+      setSosActivoEnCurso(true);
+      setSosResueltaReciente(false);
       const sosNotif: Notificacion = {
-        id: 'sos_sent',
+        id: 'sos_sent_' + Date.now(),
         tipo: 'REFUERZOS_ASIGNADOS',
-        mensaje: 'Alerta SOS transmitida. Refuerzos en ruta hacia tus coordenadas.',
+        mensaje: `Solicitud de +${uveRequerida.toFixed(1)} U.V.E. enviada. ${despachadas.length > 0 ? `${despachadas.length} unidad(es) despachada(s) por menor ETA.` : 'Unidades en ruta hacia tus coordenadas.'}`,
         leida: false,
         timestamp: new Date(),
       };
@@ -525,6 +583,26 @@ export default function HomeScreen() {
     }
   };
 
+  const uveCalculada = calcularUveMovil(
+    sesion?.tipo_transporte,
+    crew.length,
+    sesion?.identificador_unidad
+  );
+
+  // Banner de Geocerca ST_Contains / Zona de Riesgo activa (solo si tiene misión/patrullaje asignado)
+  const geofenceBannerZone: ZonaRiesgoActiva | null =
+    mission && localEstado !== 'DISPONIBLE'
+      ? (activeRiskZone ??
+        (localEstado === 'EN_ZONA'
+          ? {
+            id: String(mission.id_asignacion),
+            nombre: mission.nombre_zona ?? 'Zona Asignada',
+            nivel_riesgo: 'ALTO',
+            score_gravedad: 85,
+          }
+          : null))
+      : null;
+
   // ── Región inicial del mapa ───────────────────────────────────────────────
   const activeCenter = geofenceCenter ?? coords ?? DEFAULT_COORDS;
   const initialRegion = {
@@ -536,10 +614,20 @@ export default function HomeScreen() {
 
   const getTransportIcon = (tipo?: string): IconName => {
     switch (tipo) {
-      case 'MOTO':       return 'moto';
-      case 'BICICLETA':  return 'bici';
-      case 'INFANTERIA': return 'peaton';
-      default:           return 'auto';
+      case 'FURGON_Z':
+      case 'FZ':
+        return 'furgon';
+      case 'MOTO':
+      case 'MTT':
+        return 'moto';
+      case 'BICICLETA':
+      case 'CB':
+        return 'bici';
+      case 'INFANTERIA':
+      case 'INF':
+        return 'peaton';
+      default:
+        return 'auto';
     }
   };
 
@@ -553,31 +641,41 @@ export default function HomeScreen() {
         onDismiss={() => setNotification(null)}
       />
 
-      {/* ── Header ────────────────────────────────────────────────── */}
+      {/* ── Header Fijo con Badge U.V.E. ──────────────────────────── */}
       <View style={styles.topBar}>
-        <View>
+        <View style={{ flex: 1, marginRight: 8 }}>
           <View style={styles.unitRow}>
             {(!sesion?.tipo_transporte || sesion.tipo_transporte === 'PATRULLA') ? (
               <Image
                 source={require('../../assets/icono de patrulla.png')}
-                style={{ width: 22, height: 44, resizeMode: 'contain' }}
+                style={{ width: 22, height: 32, resizeMode: 'contain' }}
               />
             ) : (
               <Icon name={getTransportIcon(sesion?.tipo_transporte)} size={22} color={Colors.primary} />
             )}
             <Text style={styles.unitLabel}>{sesion?.identificador_unidad ?? 'PATRULLA'}</Text>
+            <View style={styles.medioCodeTag}>
+              <Text style={styles.medioCodeTagText}>{uveCalculada.tipoMedio}</Text>
+            </View>
           </View>
-          <Text style={styles.statusLabel}>
-            {dispatchCountdown !== null && localEstado === 'EN_CAMINO'
-              ? (dispatchCountdown >= 0
+          <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+            <Text style={styles.statusLabel}>
+              {dispatchCountdown !== null && localEstado === 'EN_CAMINO'
+                ? (dispatchCountdown >= 0
                   ? `En camino (${formatCountdown(dispatchCountdown)})`
                   : `En camino (Demora ${formatCountdown(dispatchCountdown)})`)
-              : localEstado === 'EN_ZONA'
-              ? 'En zona'
-              : localEstado === 'EN_CAMINO'
-              ? 'En camino'
-              : getEstadoLabel(sesion?.estado_operativo ?? 'DISPONIBLE')}
-          </Text>
+                : localEstado === 'EN_ZONA' || geofenceBannerZone
+                  ? 'En Zona de Riesgo'
+                  : localEstado === 'EN_CAMINO'
+                    ? 'En camino'
+                    : getEstadoLabel(sesion?.estado_operativo ?? 'DISPONIBLE')}
+            </Text>
+            <View style={styles.uveHeaderBadge}>
+              <Text style={styles.uveHeaderBadgeText}>
+                Carga Operativa: {uveCalculada.valorUve.toFixed(2)} U.V.E.
+              </Text>
+            </View>
+          </View>
         </View>
 
         <View style={styles.topActionsRow}>
@@ -595,6 +693,25 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* ── Alerta de Geofencing (ST_Contains) ────────────────────── */}
+      {geofenceBannerZone && (
+        <View
+          style={[
+            styles.geofenceAlertBanner,
+            geofenceBannerZone.nivel_riesgo === 'ALTO'
+              ? styles.geofenceBannerAlto
+              : geofenceBannerZone.nivel_riesgo === 'MEDIO'
+                ? styles.geofenceBannerMedio
+                : styles.geofenceBannerBajo,
+          ]}
+        >
+          <Icon name="escudo" size={16} color="#FFFFFF" />
+          <Text style={styles.geofenceAlertText}>
+            En patrullaje de Zona de Riesgo: {geofenceBannerZone.nombre} ({geofenceBannerZone.nivel_riesgo})
+          </Text>
+        </View>
+      )}
 
       {/* ── Mapa + Panel GNSS ─────────────────────────────────────── */}
       <View style={styles.mapContainer}>
@@ -615,27 +732,27 @@ export default function HomeScreen() {
         >
           {mission && mission.centro_lat != null && mission.centro_lng != null && (
             <>
-              {/* Halo exterior de calor delictual y cobertura táctica */}
+              {/* Circunferencia de patrullaje (límite entre estar en zona o fuera de zona) */}
               <Circle
                 center={{ latitude: mission.centro_lat, longitude: mission.centro_lng }}
-                radius={mission.radio_m || 50}
-                strokeColor="rgba(220, 38, 38, 0.60)"
-                fillColor="rgba(220, 38, 38, 0.18)"
-                strokeWidth={1.5}
+                radius={Math.max(20, Number(mission.radio_m) || 160)}
+                strokeColor={zoneInside ? '#16A34A' : '#DC2626'}
+                fillColor={zoneInside ? 'rgba(22, 163, 74, 0.16)' : 'rgba(220, 38, 38, 0.20)'}
+                strokeWidth={2.5}
               />
-              {/* Núcleo focal del punto de riesgo / calle crítica */}
+              {/* Núcleo focal del punto de riesgo */}
               <Circle
                 center={{ latitude: mission.centro_lat, longitude: mission.centro_lng }}
-                radius={Math.min(20, (mission.radio_m || 50) / 2)}
-                strokeColor="#DC2626"
-                fillColor="rgba(220, 38, 38, 0.45)"
+                radius={Math.min(35, Math.max(12, Math.round((Number(mission.radio_m) || 160) * 0.25)))}
+                strokeColor={zoneInside ? '#16A34A' : '#DC2626'}
+                fillColor={zoneInside ? 'rgba(22, 163, 74, 0.35)' : 'rgba(220, 38, 38, 0.42)'}
                 strokeWidth={2}
               />
               <Marker
                 coordinate={{ latitude: mission.centro_lat, longitude: mission.centro_lng }}
-                title={`🔥 Punto de Calor: ${mission.nombre_zona ?? 'Zona Asignada'}`}
-                description={mission.instrucciones ?? 'Focalización táctica por riesgo delictual'}
-                pinColor="#DC2626"
+                title={`🎯 Zona: ${mission.nombre_zona ?? 'Sector Asignado'} (Radio ${Math.max(20, Number(mission.radio_m) || 160)}m)`}
+                description={mission.instrucciones ?? 'Circunferencia de patrullaje preventivo'}
+                pinColor={zoneInside ? '#16A34A' : '#DC2626'}
               />
             </>
           )}
@@ -698,15 +815,37 @@ export default function HomeScreen() {
 
         {/* Botón SOS */}
         <TouchableOpacity
-          style={[styles.sosBtn, sosConfirmed && styles.sosBtnConfirmed]}
+          style={[styles.sosBtn, sosActivoEnCurso && styles.sosBtnConfirmed]}
           onPress={() => setShowSosModal(true)}
+          disabled={sosActivoEnCurso}
           activeOpacity={0.85}
         >
           <Icon name="alerta" size={18} color={Colors.danger} />
           <Text style={styles.sosBtnText}>
-            {sosConfirmed ? 'Refuerzos Solicitados' : 'Pedir Refuerzos'}
+            {sosActivoEnCurso ? '🚨 SOS Activo' : 'Pedir Refuerzos'}
           </Text>
         </TouchableOpacity>
+
+        {/* Texto pequeño y notorio de estado de emergencia */}
+        {(sosActivoEnCurso || sosResueltaReciente) && (
+          <View
+            style={[
+              styles.sosStatusPill,
+              sosResueltaReciente
+                ? { backgroundColor: '#16A34A20', borderColor: '#16A34A' }
+                : { backgroundColor: '#DC262620', borderColor: '#DC2626' },
+            ]}
+          >
+            <Text
+              style={[
+                styles.sosStatusPillText,
+                { color: sosResueltaReciente ? '#16A34A' : '#DC2626' },
+              ]}
+            >
+              {sosResueltaReciente ? '✅ Emergencia resuelta' : '🚨 Atendiendo emergencia'}
+            </Text>
+          </View>
+        )}
 
         {/* Dotación de turno */}
         <PatrolCrewList
@@ -714,11 +853,12 @@ export default function HomeScreen() {
           conductorRut={funcionario?.rut ?? ''}
           conductorNombre={funcionario?.nombre_completo ?? ''}
           tipoTransporte={sesion?.tipo_transporte ?? 'PATRULLA'}
+          identificadorUnidad={sesion?.identificador_unidad}
           onCrewChange={loadCrew}
         />
       </ScrollView>
 
-      {/* Modal SOS */}
+      {/* Modal SOS / Refuerzo U.V.E. */}
       <EmergencyConfirmModal
         visible={showSosModal}
         onConfirm={handleSosConfirm}
@@ -728,6 +868,8 @@ export default function HomeScreen() {
         }}
         loading={sosLoading}
         confirmed={sosConfirmed}
+        uveSolicitada={sosUveSolicitada}
+        unidadesAsignadas={sosUnidadesAsignadas}
       />
 
       {/* Modal Centro de Notificaciones */}
@@ -802,11 +944,11 @@ export default function HomeScreen() {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getEstadoLabel(estado: string): string {
   const labels: Record<string, string> = {
-    DISPONIBLE:        'Disponible',
-    EN_RUTA_HOTSPOT:   'En ruta al hotspot',
-    PATRULLANDO_ZONA:  'Patrullando zona',
-    OCUPADO_EMERGENCIA:'Emergencia activa',
-    INACTIVO:          'Inactivo',
+    DISPONIBLE: 'Disponible',
+    EN_RUTA_HOTSPOT: 'En ruta al hotspot',
+    PATRULLANDO_ZONA: 'Patrullando zona',
+    OCUPADO_EMERGENCIA: 'Emergencia activa',
+    INACTIVO: 'Inactivo',
   };
   return labels[estado] ?? estado;
 }
@@ -837,8 +979,8 @@ function getDistance(a: Coordenadas, b: Coordenadas): number {
   const x =
     Math.sin(dLat / 2) ** 2 +
     Math.cos((a.latitude * Math.PI) / 180) *
-      Math.cos((b.latitude * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
+    Math.cos((b.latitude * Math.PI) / 180) *
+    Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 }
 
@@ -855,11 +997,58 @@ const makeStyles = (Colors: ThemeColors) => StyleSheet.create({
     paddingVertical: Spacing.md,
     backgroundColor: Colors.background,
   },
-  unitRow:   { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  unitLabel: { fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.textPrimary },
-  statusLabel: { fontSize: Fonts.sizes.sm, color: Colors.textSecondary, marginTop: 2 },
-  topActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  bellBtn:   { padding: Spacing.sm, position: 'relative' },
+  unitRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  unitLabel: { fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.textPrimary },
+  medioCodeTag: {
+    backgroundColor: Colors.primarySoft,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: BorderRadius.sm,
+  },
+  medioCodeTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  statusLabel: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, marginTop: 2 },
+  topActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  uveHeaderBadge: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+  },
+  uveHeaderBadgeText: {
+    color: Colors.onPrimary,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  geofenceAlertBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 8,
+  },
+  geofenceBannerAlto: {
+    backgroundColor: '#dc2626',
+  },
+  geofenceBannerMedio: {
+    backgroundColor: '#d97706',
+  },
+  geofenceBannerBajo: {
+    backgroundColor: '#16a34a',
+  },
+  geofenceAlertText: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  bellBtn: { padding: Spacing.sm, position: 'relative' },
   msgDot: {
     position: 'absolute',
     top: 6,
@@ -977,6 +1166,60 @@ const makeStyles = (Colors: ThemeColors) => StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   sosBtnConfirmed: { borderColor: Colors.stateEnRuta, backgroundColor: Colors.surface },
+  sosStatusPill: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: Spacing.md,
+    alignItems: 'center',
+  },
+  sosStatusPillText: {
+    fontSize: Fonts.sizes.sm,
+    fontWeight: '800',
+  },
+  crewZoneCard: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+    gap: 8,
+  },
+  crewZoneTitle: {
+    fontSize: Fonts.sizes.xs,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    textTransform: 'uppercase',
+  },
+  crewZoneEmpty: {
+    fontSize: Fonts.sizes.xs,
+    color: Colors.textMuted,
+  },
+  crewZoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: Colors.border,
+  },
+  crewZoneName: {
+    fontSize: Fonts.sizes.sm,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  crewZoneBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  crewZoneBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   sosBtnText: {
     color: Colors.danger,
     fontSize: Fonts.sizes.md,

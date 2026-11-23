@@ -1,11 +1,22 @@
 import apiClient from './apiClient';
 import { TripulacionMiembro, Coordenadas } from '../types';
 
-// ── Refuerzos / SOS ──────────────────────────────────────────────────────────
-export async function requestReinforcements(coords: Coordenadas) {
+// ── Refuerzos / SOS con demanda en U.V.E. ───────────────────────────────────
+export async function requestReinforcements(coords: Coordenadas, uveRequerida: number = 1.0) {
   const { data } = await apiClient.post('/patrol/sos', {
     latitude: coords.latitude,
     longitude: coords.longitude,
+    uve_requerida: uveRequerida,
+  });
+  return data;
+}
+
+export async function despacharRefuerzosUve(patrullaOrigenId: string | number, uveRequerida: number, coords?: Coordenadas) {
+  const { data } = await apiClient.post('/refuerzos/despachar', {
+    patrulla_origen_id: String(patrullaOrigenId),
+    uve_requerida: uveRequerida,
+    latitude: coords?.latitude,
+    longitude: coords?.longitude,
   });
   return data;
 }

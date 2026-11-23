@@ -208,16 +208,16 @@ import { DashboardStore } from '../dashboard/store/dashboard.store';
               </div>
             </div>
 
-            <!-- Selector 1 a 5 -->
-            <div class="flex items-center gap-1.5 bg-sigo-surface2 p-1 rounded-xl border border-sigo-border">
+            <!-- Selector U.V.E. Objetivo para SOS -->
+            <div class="flex flex-wrap items-center gap-1.5 bg-sigo-surface2 p-1 rounded-xl border border-sigo-border">
               <button
-                *ngFor="let num of [1, 2, 3, 4, 5]"
+                *ngFor="let uve of [0.80, 1.00, 1.45, 1.80, 2.00, 2.45, 3.45, 3.80, 4.00]"
                 type="button"
-                (click)="settings.setRecursosSos(num)"
-                class="w-8 h-8 rounded-lg text-xs font-bold transition-all"
-                [ngClass]="settings.recursosSos() === num ? 'bg-red-600 text-white shadow-sm' : 'text-sigo-muted hover:text-sigo-text'"
+                (click)="settings.uveSosObjetivo.set(uve)"
+                class="px-2.5 h-8 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                [ngClass]="settings.uveSosObjetivo() === uve ? 'bg-red-600 text-white shadow-sm' : 'text-sigo-muted hover:text-sigo-text'"
               >
-                {{ num }}
+                {{ uve | number:'1.2-2' }}
               </button>
             </div>
           </div>
@@ -225,10 +225,10 @@ import { DashboardStore } from '../dashboard/store/dashboard.store';
           <div class="p-3 rounded-xl bg-sigo-surface2/60 border border-sigo-border text-xs space-y-1.5">
             <p class="text-sigo-text font-semibold flex items-center gap-2">
               <span class="w-2 h-2 rounded-full bg-red-500"></span>
-              Configurado actualmente: {{ settings.recursosSos() }} patrulla{{ settings.recursosSos() > 1 ? 's' : '' }} requerida{{ settings.recursosSos() > 1 ? 's' : '' }}
+              Objetivo SOS configurado: {{ settings.uveSosObjetivo() | number:'1.2-2' }} U.V.E.
             </p>
             <p class="text-[11px] text-sigo-muted">
-              Al emitirse una alerta de emergencia desde el móvil, el sistema convocará a los <b>{{ settings.recursosSos() }} móviles más cercanos</b> mediante el algoritmo geográfico (o requerirá que el operador seleccione manualmente {{ settings.recursosSos() }} unidades activas).
+              Al emitirse una alerta SOS desde el móvil, el algoritmo despachará unidades cercanas hasta cubrir <b>{{ settings.uveSosObjetivo() | number:'1.2-2' }} U.V.E.</b> priorizando <b>Patrullas y Furgones</b> (usando Moto para rellenar). Bicicletas y caminantes no atienden SOS, pero sí pueden solicitarlo.
             </p>
           </div>
         </div>

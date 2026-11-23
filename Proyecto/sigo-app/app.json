@@ -6,11 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1A1A2E"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -49,6 +44,16 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#1A1A2E"
+        }
+      ],
+      "expo-font",
+      "expo-asset",
       "expo-secure-store",
       "expo-location",
       [
@@ -64,10 +69,11 @@
           "cameraPermission": "S.I.G.O. Patrol necesita la cámara para capturar evidencias."
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      "expo-status-bar"
     ],
     "extra": {
-      "apiBaseUrl": "https://frequency-unknown-pay-aquatic.trycloudflare.com/api/v1",
+      "apiBaseUrl": "http://192.168.1.122:3000/api/v1",
       "supabaseUrl": "https://cjyrlgpnqkahhyqgyyvu.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqeXJsZ3BucWthaGh5cWd5eXZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4NDI4MjQsImV4cCI6MjEwMzQxODgyNH0.bWBsBriCLAUnTQMG1DXSaDzJDMXauoNFuK2ZdwiC3hA"
     }

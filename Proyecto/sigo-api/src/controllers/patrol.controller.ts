@@ -1,20 +1,24 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabaseAdmin } from '../config/supabase';
+import { validarYCalcularUve, calcularDistanciaMetros, calcularEtaPatrulla } from '../utils/uve.utils';
+import { evaluarGeocercaZonasRiesgo, memorySesionesUve, memoryHistorialDespachosRefuerzo } from './uve.controller';
 
-// ── POST /api/v1/patrol/sos  — Solicitud de refuerzos ─────────────────────
+// ── POST /api/v1/patrol/sos  — Solicitud de refuerzos con demanda U.V.E. ────
 export async function requestReinforcements(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   const { patrol_id, user_id } = req.tacticalUser!;
-  const { latitude, longitude } = req.body;
+  const { latitude, longitude, uve_requerida } = req.body;
 
   try {
     if (!latitude || !longitude) {
       res.status(400).json({ error: 'Coordenadas GPS requeridas', code: 'NO_COORDS' } as any);
       return;
     }
+
+    const uveReq = uve_requerida != null ? Number(uve_requerida) : 1.00;
 
     // Registrar alerta de emergencia
     const { data: alerta, error } = await supabaseAdmin
@@ -36,11 +40,85 @@ export async function requestReinforcements(
       .update({ estado_operativo: 'OCUPADO_EMERGENCIA' })
       .eq('id_sesion', patrol_id);
 
+    const mem = memorySesionesUve.get(String(patrol_id));
+    if (mem) {
+      mem.estado = 'SOLICITANDO_REFUERZO';
+    }
+
+    // Ejecutar algoritmo de selección de refuerzos por U.V.E. y menor ETA
+    const unidadesAsignadas: any[] = [];
+    let uveAcumulada = 0;
+
+    try {
+      const [{ data: sesionesActivas }, { data: posiciones }] = await Promise.all([
+        supabaseAdmin
+          .from('sesiones_operativas')
+          .select('id_sesion, identificador_unidad, tipo_transporte, tipo_medio, valor_uve, estado_operativo, rut_conductor, tripulacion:tripulacion_sesion(rut_acompanante)')
+          .is('fecha_cierre', null)
+          .in('estado_operativo', ['DISPONIBLE', 'PATRULLANDO_ZONA', 'EN_RUTA_HOTSPOT'])
+          .neq('id_sesion', patrol_id),
+        supabaseAdmin
+          .from('v_posicion_actual_unidades')
+          .select('id_sesion, latitud, longitud'),
+      ]);
+
+      const posMap = new Map<number, { lat: number; lng: number }>();
+      for (const p of posiciones ?? []) {
+        posMap.set(Number(p.id_sesion), { lat: Number(p.latitud), lng: Number(p.longitud) });
+      }
+
+      const candidatos = (sesionesActivas ?? []).map((s: any) => {
+        const numComp = Array.isArray(s.tripulacion) ? s.tripulacion.length : 0;
+        const esFz = (s.identificador_unidad || '').startsWith('FZ') || s.tipo_transporte === 'FURGON_Z';
+        const calc = validarYCalcularUve(esFz ? 'FZ' : (s.tipo_medio || s.tipo_transporte || 'PATRULLA'), numComp, false);
+        const pos = posMap.get(s.id_sesion) ?? { lat: -33.0205, lng: -71.5495 };
+        const distancia_m = calcularDistanciaMetros(Number(latitude), Number(longitude), pos.lat, pos.lng);
+        const { eta_segundos, eta_minutos } = calcularEtaPatrulla(distancia_m, calc.tipo_medio);
+
+        return {
+          id_sesion: s.id_sesion,
+          identificador_unidad: s.identificador_unidad || `${calc.tipo_medio}-${s.id_sesion}`,
+          tipo_medio: calc.tipo_medio,
+          valor_uve: Number(s.valor_uve ?? calc.valor_uve),
+          distancia_m,
+          distancia_km: Math.round((distancia_m / 1000) * 100) / 100,
+          eta_segundos,
+          eta_minutos,
+        };
+      });
+
+      candidatos.sort((a, b) => a.eta_segundos - b.eta_segundos);
+
+      for (const c of candidatos) {
+        if (uveAcumulada >= uveReq) break;
+        unidadesAsignadas.push({ ...c, estado: 'EN_REFUERZO' });
+        uveAcumulada = Math.round((uveAcumulada + c.valor_uve) * 100) / 100;
+      }
+
+      if (unidadesAsignadas.length > 0) {
+        memoryHistorialDespachosRefuerzo.unshift({
+          id_despacho: `sos-${alerta.id_emergencia}`,
+          patrulla_origen_id: patrol_id,
+          identificador_origen: `Móvil #${patrol_id}`,
+          uve_requerida: uveReq,
+          uve_acumulada: uveAcumulada,
+          coordenadas_emergencia: { latitude: Number(latitude), longitude: Number(longitude) },
+          unidades_asignadas: unidadesAsignadas,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (dispErr) {
+      console.warn('[SOS UVE DISPATCH] Error calculando candidatos:', dispErr);
+    }
+
     res.status(201).json({
-      message: '🚨 Alerta de refuerzos enviada',
+      message: `🚨 Alerta de refuerzos enviada (+${uveReq.toFixed(1)} U.V.E.)`,
       alerta_id: alerta.id_emergencia,
       patrol_id,
       rut_solicitante: user_id,
+      uve_requerida: Number(uveReq.toFixed(2)),
+      uve_acumulada: Number(uveAcumulada.toFixed(2)),
+      unidades_asignadas: unidadesAsignadas,
       coordenadas: { latitude, longitude },
     });
   } catch (err) {
@@ -76,13 +154,20 @@ export async function addCrewMember(
     // 0. Verificar tipo de transporte y límite de dotación
     const { data: sesionActual } = await supabaseAdmin
       .from('sesiones_operativas')
-      .select('id_sesion, tipo_transporte')
+      .select('id_sesion, tipo_transporte, identificador_unidad')
       .eq('id_sesion', patrol_id)
       .maybeSingle();
 
-    if (sesionActual && sesionActual.tipo_transporte !== 'PATRULLA') {
+    const memUve = memorySesionesUve.get(String(patrol_id));
+    const esFurgon =
+      (sesionActual?.identificador_unidad || '').startsWith('FZ') ||
+      sesionActual?.tipo_transporte === 'FURGON_Z' ||
+      memUve?.tipo_medio === 'FZ';
+    const tipoEfectivo = esFurgon ? 'FURGON_Z' : (sesionActual?.tipo_transporte ?? 'PATRULLA');
+
+    if (tipoEfectivo === 'MOTO' || tipoEfectivo === 'MTT') {
       res.status(400).json({
-        error: `El medio de transporte ${sesionActual.tipo_transporte} opera de forma individual (sin acompañantes).`,
+        error: 'Moto Todo Terreno (MTT) opera de forma individual (sin acompañantes).',
         code: 'TRANSPORT_NO_COMPANIONS',
       } as any);
       return;
@@ -93,9 +178,10 @@ export async function addCrewMember(
       .select('*', { count: 'exact', head: true })
       .eq('id_sesion', patrol_id);
 
-    if ((crewCount ?? 0) >= 2) {
+    const maxPermitidos = (tipoEfectivo === 'PATRULLA' || tipoEfectivo === 'FURGON_Z') ? 2 : 1;
+    if ((crewCount ?? 0) >= maxPermitidos) {
       res.status(400).json({
-        error: 'Radio Patrulla ya cuenta con el límite máximo de 2 acompañantes.',
+        error: `Este medio ya cuenta con el límite máximo de ${maxPermitidos} acompañante(s).`,
         code: 'CREW_LIMIT_REACHED',
       } as any);
       return;
@@ -162,9 +248,27 @@ export async function addCrewMember(
 
     if (error) throw error;
 
+    // Recalcular U.V.E. dinámica tras agregar acompañante
+    const nuevoCount = (crewCount ?? 0) + 1;
+    const calcUve = validarYCalcularUve(esFurgon ? 'FZ' : tipoEfectivo, nuevoCount, false);
+    if (memUve) {
+      memUve.tipo_medio = calcUve.tipo_medio;
+      memUve.valor_uve = calcUve.valor_uve;
+      if (!memUve.acompanante_1_id) memUve.acompanante_1_id = rutLimpio;
+      else memUve.acompanante_2_id = rutLimpio;
+    }
+    try {
+      await supabaseAdmin
+        .from('sesiones_operativas')
+        .update({ tipo_medio: calcUve.tipo_medio, valor_uve: calcUve.valor_uve })
+        .eq('id_sesion', patrol_id);
+    } catch { }
+
     res.status(201).json({
       message: 'Miembro agregado a la dotación',
       data,
+      tipo_medio: calcUve.tipo_medio,
+      valor_uve: calcUve.valor_uve,
       funcionario: {
         rut_usuario: usuario.rut_usuario,
         nombre_completo: usuario.nombre_completo,
@@ -187,9 +291,34 @@ export async function removeCrewMember(
 
   try {
     const rutLimpio = decodeURIComponent(rut).trim();
-    console.log(`[CREW REMOVE] Desvinculando compañero ${rutLimpio} de sesión operativa ${patrol_id}`);
 
-    const { error, count } = await supabaseAdmin
+    // Verificar regla de negocio Furgón Z: mínimo obligatorio 2 tripulantes (Líder + 1 acompañante)
+    const { data: sesionActual } = await supabaseAdmin
+      .from('sesiones_operativas')
+      .select('id_sesion, tipo_transporte, identificador_unidad')
+      .eq('id_sesion', patrol_id)
+      .maybeSingle();
+
+    const { count: crewCount } = await supabaseAdmin
+      .from('tripulacion_sesion')
+      .select('*', { count: 'exact', head: true })
+      .eq('id_sesion', patrol_id);
+
+    const memUve = memorySesionesUve.get(String(patrol_id));
+    const esFurgon =
+      (sesionActual?.identificador_unidad || '').startsWith('FZ') ||
+      sesionActual?.tipo_transporte === 'FURGON_Z' ||
+      memUve?.tipo_medio === 'FZ';
+
+    if (esFurgon && (crewCount ?? 0) <= 1) {
+      res.status(400).json({
+        error: 'Furgón Z (FZ) exige un MÍNIMO obligatorio de 2 tripulantes (Líder + 1 acompañante). No se puede desvincular al único acompañante.',
+        code: 'FZ_MIN_CREW_REQUIRED',
+      } as any);
+      return;
+    }
+
+    const { error } = await supabaseAdmin
       .from('tripulacion_sesion')
       .delete({ count: 'exact' })
       .eq('id_sesion', patrol_id)
@@ -201,14 +330,36 @@ export async function removeCrewMember(
       return;
     }
 
-    console.log(`[CREW REMOVE SUCCESS] Filas eliminadas: ${count}`);
-    res.json({ message: 'Compañero eliminado de la dotación correctamente', rut: rutLimpio });
+    const nuevoCount = Math.max(0, (crewCount ?? 1) - 1);
+    const calcUve = validarYCalcularUve(
+      esFurgon ? 'FZ' : (sesionActual?.tipo_transporte ?? 'PATRULLA'),
+      nuevoCount,
+      false
+    );
+
+    if (memUve) {
+      memUve.tipo_medio = calcUve.tipo_medio;
+      memUve.valor_uve = calcUve.valor_uve;
+    }
+    try {
+      await supabaseAdmin
+        .from('sesiones_operativas')
+        .update({ tipo_medio: calcUve.tipo_medio, valor_uve: calcUve.valor_uve })
+        .eq('id_sesion', patrol_id);
+    } catch { }
+
+    res.json({
+      message: 'Compañero eliminado de la dotación correctamente',
+      rut: rutLimpio,
+      tipo_medio: calcUve.tipo_medio,
+      valor_uve: calcUve.valor_uve,
+    });
   } catch (err) {
     next(err);
   }
 }
 
-// ── GET /api/v1/patrol/crew  — Obtener tripulación actual ───────────────────
+// ── GET /api/v1/patrol/crew  — Obtener tripulación actual y U.V.E. ──────────
 export async function getCrew(
   req: Request,
   res: Response,
@@ -217,37 +368,61 @@ export async function getCrew(
   const { patrol_id } = req.tacticalUser!;
 
   try {
-    const { data, error } = await supabaseAdmin
-      .from('tripulacion_sesion')
-      .select('id_tripulacion, rut_acompanante, usuarios(nombre_completo, grado_cargo)')
-      .eq('id_sesion', patrol_id);
+    const [{ data, error }, { data: sesionActual }] = await Promise.all([
+      supabaseAdmin
+        .from('tripulacion_sesion')
+        .select('id_tripulacion, rut_acompanante, usuarios(nombre_completo, grado_cargo)')
+        .eq('id_sesion', patrol_id),
+      supabaseAdmin
+        .from('sesiones_operativas')
+        .select('tipo_transporte, identificador_unidad')
+        .eq('id_sesion', patrol_id)
+        .maybeSingle(),
+    ]);
 
     if (error) {
       console.error('[GET CREW ERROR]:', error);
       throw error;
     }
 
-    res.json({ patrol_id, tripulacion: data ?? [] });
+    const tripulacion = data ?? [];
+    const memUve = memorySesionesUve.get(String(patrol_id));
+    const esFurgon =
+      (sesionActual?.identificador_unidad || '').startsWith('FZ') ||
+      sesionActual?.tipo_transporte === 'FURGON_Z' ||
+      memUve?.tipo_medio === 'FZ';
+    const calcUve = validarYCalcularUve(
+      esFurgon ? 'FZ' : (sesionActual?.tipo_transporte ?? 'PATRULLA'),
+      tripulacion.length,
+      false
+    );
+
+    res.json({
+      patrol_id,
+      tripulacion,
+      tipo_medio: calcUve.tipo_medio,
+      valor_uve: calcUve.valor_uve,
+    });
   } catch (err) {
     next(err);
   }
 }
 
-// ── POST /api/v1/patrol/telemetry  — Ingestar ping GNSS completo ────────────
+// ── POST /api/v1/patrol/telemetry  — Ingestar ping GNSS + ST_Contains ────────
 export async function updateTelemetry(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  const { patrol_id } = req.tacticalUser!;
+  const { patrol_id, sesion_patrullaje_id } = req.tacticalUser!;
   const {
     latitude,
     longitude,
-    altitude,        // metros sobre el nivel del mar
-    accuracy,        // precisión horizontal en metros
-    speed,           // velocidad en m/s → convertir a km/h
-    heading,         // rumbo en grados (0–360)
-    timestamp_gps,   // timestamp ISO del fix GNSS en el dispositivo
+    altitude,
+    accuracy,
+    speed,
+    heading,
+    timestamp_gps,
   } = req.body;
 
   try {
@@ -294,60 +469,92 @@ export async function updateTelemetry(
     }
 
     const { error } = await supabaseAdmin.from('telemetria_activa').insert({
-      id_sesion:     patrol_id,
-      geom_actual:   `SRID=4326;POINT(${longitude} ${latitude})`,
-      altitud_m:     altitude ?? null,
-      precision_m:   accuracy ?? null,
+      id_sesion: patrol_id,
+      geom_actual: `SRID=4326;POINT(${longitude} ${latitude})`,
+      altitud_m: altitude ?? null,
+      precision_m: accuracy ?? null,
       velocidad_kmh,
-      rumbo_grados:  heading ?? null,
+      rumbo_grados: heading ?? null,
       timestamp_gps: timestamp_gps ?? new Date().toISOString(),
       timestamp_srv: new Date().toISOString(),
     });
 
     if (error) throw error;
 
-    // ── Detección Automática de Llegada a la Zona Asignada ──────────────────
+    // Actualizar ubicación en memoria U.V.E.
+    const mem = memorySesionesUve.get(String(patrol_id));
+    if (mem) {
+      mem.ubicacion_actual = { latitude: Number(latitude), longitude: Number(longitude) };
+      mem.updated_at = new Date().toISOString();
+    }
+
+    // ── Evaluación espacial ST_Contains contra zonas_riesgo (actualizar_telemetria_patrulla) ──
+    let geofenceZonaRiesgo: any = null;
+    try {
+      const evalResult = await evaluarGeocercaZonasRiesgo(
+        sesion_patrullaje_id ?? patrol_id,
+        Number(latitude),
+        Number(longitude)
+      );
+      if (evalResult.en_zona_riesgo && evalResult.zona) {
+        geofenceZonaRiesgo = evalResult.zona;
+        if (mem) {
+          mem.estado = 'EN_ZONA_RIESGO';
+          mem.zona_actual = evalResult.zona;
+        }
+      } else if (mem && mem.estado === 'EN_ZONA_RIESGO') {
+        mem.estado = 'PATRULLANDO';
+        mem.zona_actual = null;
+      }
+    } catch { }
+
+    // ── Detección Automática de Llegada a la Zona Asignada (asignaciones_tacticas) ──
     try {
       const { data: asignacionActiva } = await supabaseAdmin
         .from('asignaciones_tacticas')
-        .select('id_asignacion, centro_lat, centro_lng, radio_m, estado_mision, hora_despacho, hora_ingreso_zona')
+        .select('id_asignacion, centro_lat, centro_lng, radio_m, estado_mision, hora_despacho, hora_ingreso_zona, nombre_zona')
         .eq('id_sesion', patrol_id)
-        .is('hora_ingreso_zona', null)
         .not('estado_mision', 'in', '("COMPLETADA","CANCELADA")')
         .order('hora_despacho', { ascending: false })
         .limit(1)
         .maybeSingle();
 
       if (asignacionActiva && asignacionActiva.centro_lat != null && asignacionActiva.centro_lng != null) {
-        // Cálculo de distancia en metros (Haversine)
-        const R = 6371e3;
-        const φ1 = (latitude * Math.PI) / 180;
-        const φ2 = (Number(asignacionActiva.centro_lat) * Math.PI) / 180;
-        const Δφ = ((Number(asignacionActiva.centro_lat) - latitude) * Math.PI) / 180;
-        const Δλ = ((Number(asignacionActiva.centro_lng) - longitude) * Math.PI) / 180;
-        const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-                  Math.cos(φ1) * Math.cos(φ2) *
-                  Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        const distMetros = R * c;
+        const distMetros = calcularDistanciaMetros(
+          Number(latitude),
+          Number(longitude),
+          Number(asignacionActiva.centro_lat),
+          Number(asignacionActiva.centro_lng)
+        );
+        const radioCircunferencia = Math.max(20, Number(asignacionActiva.radio_m) || 160);
 
-        // Radio exacto de la zona (mínimo 50m) con margen GPS de 20m
-        const radioTolerancia = Math.max(Number(asignacionActiva.radio_m) || 50, 50) + 20;
+        if (distMetros <= radioCircunferencia) {
+          if (!asignacionActiva.hora_ingreso_zona) {
+            await supabaseAdmin
+              .from('asignaciones_tacticas')
+              .update({
+                estado_mision: 'PATRULLANDO',
+                hora_ingreso_zona: new Date().toISOString(),
+              })
+              .eq('id_asignacion', asignacionActiva.id_asignacion);
 
-        if (distMetros <= radioTolerancia) {
-          console.log(`[AUTOGEOFENCE] Sesión ${patrol_id} ingresó a zona asignada ${asignacionActiva.id_asignacion} (dist: ${Math.round(distMetros)}m <= ${radioTolerancia}m). Transicionando a PATRULLANDO_ZONA.`);
-          await supabaseAdmin
-            .from('asignaciones_tacticas')
-            .update({
-              estado_mision: 'PATRULLANDO',
-              hora_ingreso_zona: new Date().toISOString(),
-            })
-            .eq('id_asignacion', asignacionActiva.id_asignacion);
+            await supabaseAdmin
+              .from('sesiones_operativas')
+              .update({ estado_operativo: 'PATRULLANDO_ZONA' })
+              .eq('id_sesion', patrol_id);
+          }
 
-          await supabaseAdmin
-            .from('sesiones_operativas')
-            .update({ estado_operativo: 'PATRULLANDO_ZONA' })
-            .eq('id_sesion', patrol_id);
+          if (!geofenceZonaRiesgo) {
+            geofenceZonaRiesgo = {
+              id: String(asignacionActiva.id_asignacion),
+              nombre: asignacionActiva.nombre_zona ?? 'Zona Asignada',
+              nivel_riesgo: 'ALTO',
+              score_gravedad: 85,
+              centro_lat: Number(asignacionActiva.centro_lat),
+              centro_lng: Number(asignacionActiva.centro_lng),
+              radio_m: radioCircunferencia,
+            };
+          }
         }
       }
     } catch (geofenceErr) {
@@ -357,6 +564,8 @@ export async function updateTelemetry(
     res.json({
       ok: true,
       patrol_id,
+      en_zona_riesgo: !!geofenceZonaRiesgo,
+      zona_riesgo: geofenceZonaRiesgo,
       timestamp_srv: new Date().toISOString(),
     });
   } catch (err) {
@@ -373,7 +582,6 @@ export async function getTelemetryStatus(
   const { patrol_id } = req.tacticalUser!;
 
   try {
-    // Consultamos la vista que extrae lat/lon vía ST_Y / ST_X
     const { data, error } = await supabaseAdmin
       .from('v_posicion_actual_unidades')
       .select('latitud, longitud, altitud_m, precision_m, velocidad_kmh, rumbo_grados, timestamp_gps, timestamp_srv')

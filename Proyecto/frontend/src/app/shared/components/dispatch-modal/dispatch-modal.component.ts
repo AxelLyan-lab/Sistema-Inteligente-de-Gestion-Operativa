@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, Output, OnInit, inject } from '@angular
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../../core/services/api.service';
-import { SesionOperativa, ZonaPatrullaje, EstadoOperativo } from '../../../core/models';
+import { SesionOperativa, ZonaPatrullaje, EstadoOperativo, calcularUveSesion } from '../../../core/models';
 import { IconComponent } from '../icon/icon.component';
 import { HOTSPOT_ZONES, HotspotZone, getRisk, MapService, findMatchingHotspotZone } from '../../../core/services/map.service';
 
@@ -38,7 +38,9 @@ import { HOTSPOT_ZONES, HotspotZone, getRisk, MapService, findMatchingHotspotZon
               <div class="flex items-center gap-2">
                 <app-icon name="auto" [size]="18" color="var(--sigo-accent)"></app-icon>
                 <span class="font-bold text-sigo-text text-sm">{{ sesion.identificador_unidad || 'Unidad ' + sesion.id_sesion }}</span>
-                <span class="text-sigo-muted text-[11px]">({{ sesion.conductor?.nombre_completo || 'Funcionario en terreno' }})</span>
+                <span class="px-1.5 py-0.5 rounded bg-sigo-accent/15 text-sigo-accent font-extrabold text-[10px] border border-sigo-accent/30">
+                  {{ getUnitUve().tipoMedio }} · {{ getUnitUve().valorUve | number:'1.2-2' }} U.V.E.
+                </span>
               </div>
               <span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-sigo-accent/15 text-sigo-accent">
                 {{ sesion.estado_operativo }}
@@ -72,22 +74,33 @@ import { HOTSPOT_ZONES, HotspotZone, getRisk, MapService, findMatchingHotspotZon
             </div>
           </div>
 
-          <!-- Selección de Zona (todas las zonas registradas en el mapa) -->
+          <!-- Selección de Zona (ordenadas por prioridad de gravedad) -->
           <div>
-            <label class="block text-sigo-muted font-medium mb-1.5">Zona de Patrullaje</label>
+            <label class="block text-sigo-muted font-medium mb-1.5">Zona de Patrullaje (Ordenadas por Prioridad y U.V.E.)</label>
             <select
               [(ngModel)]="selectedZonaKey"
               (ngModelChange)="onZonaChange($event)"
               class="input-field"
             >
               <option [ngValue]="null">-- Coordenadas personalizadas --</option>
-              <option *ngFor="let z of mapZones" [ngValue]="'map-' + z.id">
-                {{ z.name }} · {{ z.address }} (Riesgo {{ riskLabel(z.crimeCount) }})
+              <option *ngFor="let z of getSortedMapZones()" [ngValue]="'map-' + z.id">
+                {{ z.name }} · {{ z.address }} (Riesgo {{ riskLabel(z.crimeCount) }} · Req: {{ getRequiredUveForZone(z) | number:'1.2-2' }} U.V.E.)
               </option>
               <option *ngFor="let z of zonas" [ngValue]="'db-' + z.id_zona">
                 {{ z.nombre }} (Radio {{ z.radio_m }}m)
               </option>
             </select>
+          </div>
+
+          <!-- Pequeño Recuadro de Advertencia si la U.V.E. de la unidad es menor a la requerida por la zona -->
+          <div *ngIf="isLowSecurityForSelectedZone()" class="p-3 rounded-xl bg-amber-950/85 border border-amber-500/60 text-amber-200 space-y-1">
+            <div class="flex items-center justify-between font-bold text-amber-300 text-xs">
+              <span>⚠️ Advertencia: Seguridad Baja por Déficit U.V.E.</span>
+              <span>{{ getUnitUve().valorUve | number:'1.2-2' }} / {{ getSelectedZoneRequiredUve() | number:'1.2-2' }} U.V.E.</span>
+            </div>
+            <p class="text-[11px] text-amber-100/90 leading-snug">
+              La unidad seleccionada aporta <b>{{ getUnitUve().valorUve | number:'1.2-2' }} U.V.E.</b> y esta zona requiere mínimo <b>{{ getSelectedZoneRequiredUve() | number:'1.2-2' }} U.V.E.</b> Se recomienda combinar otro servicio adicional para alcanzar el puntaje requerido.
+            </p>
           </div>
 
           <!-- Campos Coordenadas y Radio -->
@@ -170,7 +183,7 @@ export class DispatchModalComponent implements OnInit {
 
   lat: number = HOTSPOT_ZONES[0].lat;
   lng: number = HOTSPOT_ZONES[0].lng;
-  radio_m: number = 50; // 1 cuadra (radio 50m)
+  radio_m: number = HOTSPOT_ZONES[0].radio_m || 160;
   nombre_zona: string = HOTSPOT_ZONES[0].name;
   instrucciones: string = 'Patrullaje preventivo focalizado en la zona asignada.';
   loading = false;
@@ -216,10 +229,46 @@ export class DispatchModalComponent implements OnInit {
     return getRisk(count).label;
   }
 
+  getUnitUve() {
+    return calcularUveSesion(this.sesion);
+  }
+
+  getSortedMapZones(): HotspotZone[] {
+    return [...HOTSPOT_ZONES].sort(
+      (a, b) => (b.scoreGravedad ?? b.crimeCount * 10) - (a.scoreGravedad ?? a.crimeCount * 10)
+    );
+  }
+
+  getRequiredUveForZone(z: HotspotZone): number {
+    if (z.uveObjetivoMin != null) return Number(z.uveObjetivoMin);
+    const s = z.scoreGravedad != null ? Number(z.scoreGravedad) : z.crimeCount * 10;
+    if (s > 80 || z.crimeCount >= 7) return 1.00;
+    if (s >= 40 || z.crimeCount >= 4) return 0.45;
+    return 0.20;
+  }
+
+  getSelectedZoneRequiredUve(): number {
+    if (this.selectedZonaKey?.startsWith('map-')) {
+      const z = HOTSPOT_ZONES.find(x => 'map-' + x.id === this.selectedZonaKey);
+      if (z) return this.getRequiredUveForZone(z);
+    }
+    return 0.20;
+  }
+
+  isLowSecurityForSelectedZone(): boolean {
+    if (!this.selectedZonaKey?.startsWith('map-')) return false;
+    return this.getUnitUve().valorUve + 0.001 < this.getSelectedZoneRequiredUve();
+  }
+
   async ngOnInit(): Promise<void> {
     this.selectedZonaKey = 'map-' + HOTSPOT_ZONES[0].id;
+    this.radio_m = HOTSPOT_ZONES[0].radio_m || 160;
     try {
       this.zonas = await this.api.getZonas();
+      const matchDb = this.zonas.find(z => z.id_zona === HOTSPOT_ZONES[0].id || z.nombre === HOTSPOT_ZONES[0].name);
+      if (matchDb && matchDb.radio_m) {
+        this.radio_m = matchDb.radio_m;
+      }
     } catch (e) {
       console.warn('Error cargando zonas:', e);
     }
@@ -232,7 +281,7 @@ export class DispatchModalComponent implements OnInit {
       if (z) {
         this.lat = z.lat;
         this.lng = z.lng;
-        this.radio_m = 50;
+        this.radio_m = z.radio_m || 160;
         this.nombre_zona = z.name;
       }
     } else if (key.startsWith('db-')) {
@@ -240,7 +289,7 @@ export class DispatchModalComponent implements OnInit {
       if (z) {
         this.lat = z.lat;
         this.lng = z.lng;
-        this.radio_m = z.radio_m || 50;
+        this.radio_m = z.radio_m || 160;
         this.nombre_zona = z.nombre;
       }
     }

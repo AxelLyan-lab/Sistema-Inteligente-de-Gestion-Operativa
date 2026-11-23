@@ -12,7 +12,7 @@ export async function uploadEvidence(
   next: NextFunction
 ): Promise<void> {
   const { patrol_id } = req.tacticalUser!;
-  const { descripcion_texto, tipo_evidencia, latitude, longitude } = req.body;
+  const { descripcion_texto, tipo_evidencia, latitude, longitude, id_asignacion } = req.body;
   const file = req.file;
 
   try {
@@ -53,11 +53,11 @@ export async function uploadEvidence(
       .from('registro_evidencias')
       .insert({
         id_sesion: patrol_id,
-        id_asignacion: asignacion?.id_asignacion ?? null,
+        id_asignacion: id_asignacion ? Number(id_asignacion) : (asignacion?.id_asignacion ?? null),
         origen: 'MOVIL',
         subido_por: req.tacticalUser!.nombre,
         tipo_evidencia: tipo_evidencia ?? 'EVIDENCIA_BASICA',
-        es_obligatoria: false,
+        es_obligatoria: tipo_evidencia === 'JUSTIFICACION_ATRASO',
         url_fotografia,
         descripcion_texto: descripcion_texto ?? null,
         fecha_subida: new Date().toISOString(),

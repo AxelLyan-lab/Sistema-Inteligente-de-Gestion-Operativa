@@ -56,12 +56,16 @@ export default function MessagesScreen() {
 
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
 
-  const toUi = (m: MensajeChat): Message => ({
-    id: String(m.id_mensaje),
-    text: m.texto,
-    sent: m.remitente === 'FUNCIONARIO',
-    timestamp: new Date(m.fecha),
-  });
+  const toUi = (m: MensajeChat): Message => {
+    const raw = (m.fecha || '').trim();
+    const iso = /(Z|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : raw.replace(' ', 'T') + 'Z';
+    return {
+      id: String(m.id_mensaje),
+      text: m.texto,
+      sent: m.remitente === 'FUNCIONARIO',
+      timestamp: new Date(iso),
+    };
+  };
 
   const lastMsgIdRef = useRef<number | null>(null);
 

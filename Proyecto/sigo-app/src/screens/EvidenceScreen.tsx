@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import {
   pickPhotoAsset,
   uploadEvidenceAsset,
 } from '../services/evidence.service';
+import apiClient from '../services/apiClient';
 import { Spacing, BorderRadius, Fonts, ThemeColors } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import Icon, { IconName } from '../components/Icon';
@@ -28,6 +29,15 @@ import Icon, { IconName } from '../components/Icon';
  * Permite tomar foto o grabar video (con compresión 640p optimizada para memoria y datos),
  * previsualizarla, redactar la descripción y enviarla formalmente al sistema.
  */
+function formatChileDate(raw: string | Date | null | undefined): string {
+  if (!raw) return '—';
+  const s = typeof raw === 'string' ? raw.trim() : raw.toISOString();
+  const iso = /(Z|[+-]\d{2}:?\d{2})$/.test(s) ? s : s.replace(' ', 'T') + 'Z';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(raw);
+  return d.toLocaleString('es-CL', { timeZone: 'America/Santiago', hour12: false });
+}
+
 export default function EvidenceScreen() {
   const { Colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -37,6 +47,45 @@ export default function EvidenceScreen() {
   const [tipoEvidencia, setTipoEvidencia] = useState('EVIDENCIA_BASICA');
   const [loading, setLoading] = useState(false);
   const [lastUpload, setLastUpload] = useState<any>(null);
+  const [retrasoSeleccionadoId, setRetrasoSeleccionadoId] = useState<number | null>(null);
+  const [retrasosDetectados, setRetrasosDetectados] = useState<Array<{
+    id_asignacion: number;
+    nombre_zona: string;
+    direccion_zona: string;
+    hora_asignacion: string;
+    segundos_retraso?: number;
+    minutos_retraso: number;
+    texto_retraso?: string;
+    estado_mision?: string;
+    justificada: boolean;
+  }>>([]);
+
+  useEffect(() => {
+    let alive = true;
+    const fetchRetrasos = () => {
+      apiClient
+        .get('/patrol/retrasos')
+        .then(({ data }) => {
+          if (!alive || !Array.isArray(data?.retrasos)) return;
+          setRetrasosDetectados(data.retrasos);
+          const firstPending = data.retrasos.find((r: any) => !r.justificada);
+          setRetrasoSeleccionadoId(prev => {
+            if (prev && data.retrasos.some((r: any) => r.id_asignacion === prev && !r.justificada)) {
+              return prev;
+            }
+            return firstPending ? firstPending.id_asignacion : null;
+          });
+        })
+        .catch(() => {});
+    };
+
+    fetchRetrasos();
+    const timer = setInterval(fetchRetrasos, 3000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [tipoEvidencia]);
 
   const isVideoAsset = (asset: ImagePicker.ImagePickerAsset | null) => {
     if (!asset) return false;
@@ -97,7 +146,9 @@ export default function EvidenceScreen() {
   };
 
   const handleSubmitEvidence = async () => {
-    if (!selectedAsset) {
+    const esJustificacion = tipoEvidencia === 'JUSTIFICACION_ATRASO';
+
+    if (!esJustificacion && !selectedAsset) {
       Alert.alert('Evidencia Requerida', 'Por favor capture una fotografía o grabe un video antes de enviar.');
       return;
     }
@@ -109,21 +160,46 @@ export default function EvidenceScreen() {
 
     setLoading(true);
     try {
-      const coords = await getCoords();
-      const result = await uploadEvidenceAsset(
-        selectedAsset,
-        description.trim(),
-        tipoEvidencia,
-        coords
-      );
+      const pendiente =
+        retrasosDetectados.find(r => r.id_asignacion === retrasoSeleccionadoId && !r.justificada) ??
+        retrasosDetectados.find(r => !r.justificada);
+      const textoFinal = esJustificacion && pendiente
+        ? `[RETRASO #ASIG-${pendiente.id_asignacion} · ${pendiente.nombre_zona} (${pendiente.direccion_zona}) · Enviado ${pendiente.hora_asignacion}] ${description.trim()}`
+        : description.trim();
+
+      let result: any = null;
+      if (selectedAsset) {
+        const coords = await getCoords();
+        result = await uploadEvidenceAsset(
+          selectedAsset,
+          textoFinal,
+          tipoEvidencia,
+          coords,
+          pendiente?.id_asignacion
+        );
+      } else {
+        const { data } = await apiClient.post('/patrol/justificar-retraso', {
+          descripcion_texto: textoFinal,
+          id_asignacion: pendiente?.id_asignacion ?? null,
+        });
+        result = data;
+      }
 
       if (result) {
         setLastUpload(result.evidencia);
         setSelectedAsset(null);
         setDescription('');
+        if (esJustificacion && pendiente) {
+          setRetrasosDetectados(prev =>
+            prev.map(r => (r.id_asignacion === pendiente.id_asignacion ? { ...r, justificada: true } : r))
+          );
+          setRetrasoSeleccionadoId(null);
+        }
         Alert.alert(
           'Evidencia Registrada',
-          'El archivo audiovisual y su descripción fueron enviados con éxito a la central SIGO.'
+          esJustificacion
+            ? 'La justificación de retraso fue guardada en Evidencias del Operador.'
+            : 'El archivo audiovisual y su descripción fueron enviados con éxito a la central SIGO.'
         );
       }
     } catch (err: any) {
@@ -140,7 +216,60 @@ export default function EvidenceScreen() {
         <Text style={styles.subtitle}>Respaldo de fotografía, video comprimido y descripción de turno</Text>
 
         {/* 1. Selector / Previsualización de Foto o Video */}
-        <Text style={styles.sectionLabel}>Archivo Audiovisual del Hecho</Text>
+        {tipoEvidencia === 'JUSTIFICACION_ATRASO' && (
+          <View style={{ backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: BorderRadius.md, padding: 12, marginBottom: 14 }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: Colors.textPrimary, marginBottom: 6 }}>
+              Retrasos detectados en tu sesión actual (selecciona para justificar):
+            </Text>
+            {retrasosDetectados.length === 0 ? (
+              <Text style={{ fontSize: 12, color: Colors.textMuted }}>
+                No tienes retrasos pendientes de justificar en este turno.
+              </Text>
+            ) : (
+              retrasosDetectados.map(r => {
+                const isSelected = retrasoSeleccionadoId === r.id_asignacion && !r.justificada;
+                return (
+                  <TouchableOpacity
+                    key={r.id_asignacion}
+                    disabled={r.justificada}
+                    onPress={() => setRetrasoSeleccionadoId(r.id_asignacion)}
+                    style={{
+                      padding: 10,
+                      marginTop: 6,
+                      borderRadius: BorderRadius.sm,
+                      borderWidth: 1.5,
+                      borderColor: r.justificada
+                        ? '#16A34A'
+                        : isSelected
+                          ? Colors.primary
+                          : Colors.danger,
+                      backgroundColor: r.justificada
+                        ? '#16A34A12'
+                        : isSelected
+                          ? Colors.primary + '15'
+                          : '#DC262612',
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: r.justificada ? '#16A34A' : Colors.danger }}>
+                        {r.nombre_zona} · Hora envío: {r.hora_asignacion}
+                      </Text>
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: r.justificada ? '#16A34A' : Colors.danger }}>
+                        {r.justificada ? '✓ Justificada' : `Demora: ${r.texto_retraso ?? `${r.minutos_retraso} min`}`}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 12, color: Colors.textSecondary, marginTop: 2 }}>
+                      Dirección: {r.direccion_zona}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </View>
+        )}
+        <Text style={styles.sectionLabel}>
+          {tipoEvidencia === 'JUSTIFICACION_ATRASO' ? 'Archivo Audiovisual (Opcional)' : 'Archivo Audiovisual del Hecho'}
+        </Text>
 
         {selectedAsset ? (
           <View style={styles.previewContainer}>
@@ -273,10 +402,11 @@ export default function EvidenceScreen() {
         <TouchableOpacity
           style={[
             styles.submitBtn,
-            (!selectedAsset || loading) && styles.submitBtnDisabled,
+            ((tipoEvidencia !== 'JUSTIFICACION_ATRASO' && !selectedAsset) || !description.trim() || loading) &&
+              styles.submitBtnDisabled,
           ]}
           onPress={handleSubmitEvidence}
-          disabled={!selectedAsset || loading}
+          disabled={(tipoEvidencia !== 'JUSTIFICACION_ATRASO' && !selectedAsset) || !description.trim() || loading}
           activeOpacity={0.85}
         >
           {loading ? (
@@ -300,7 +430,7 @@ export default function EvidenceScreen() {
               <Text style={styles.lastUploadLabel}>Última evidencia registrada</Text>
             </View>
             <Text style={styles.lastUploadDate}>
-              {new Date(lastUpload.fecha_subida).toLocaleString('es-CL')}
+              {formatChileDate(lastUpload.fecha_subida)}
             </Text>
             {lastUpload.url_fotografia && (
               <Image source={{ uri: lastUpload.url_fotografia }} style={styles.previewImage} />
