@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { getStoredSession, patrolLogin as loginService, patrolLogout as logoutService, validateToken, clearStoredSession } from '../services/auth.service';
+import { startPatrolBackgroundService, stopPatrolBackgroundService } from '../services/background.service';
 import { AuthState, LoginForm, Funcionario, SesionOperativa } from '../types';
 
 interface AuthContextType extends AuthState {
@@ -36,6 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               isLoading: false,
               isAuthenticated: true,
             });
+            startPatrolBackgroundService(stored.token).catch(() => {});
           } else {
             // Token expirado — limpiar y forzar re-login
             await clearStoredSession();
@@ -61,9 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading: false,
       isAuthenticated: true,
     });
+    startPatrolBackgroundService(data.token).catch(() => {});
   };
 
   const logout = async () => {
+    stopPatrolBackgroundService();
     await logoutService();
     setState({
       token: null,

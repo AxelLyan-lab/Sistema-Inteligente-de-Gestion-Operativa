@@ -16,8 +16,12 @@ import { authRouter } from './routes/auth.routes';
 import { patrolRouter } from './routes/patrol.routes';
 import { evidenceRouter } from './routes/evidence.routes';
 import { sesionesRouter } from './routes/sesiones.routes';
+import { uveRouter } from './routes/uve.routes';
+import { configRouter } from './routes/config.routes';
+import { tacticoRouter } from './routes/tactico.routes';
 import { errorHandler } from './middleware/error.middleware';
 import { startSessionSweeper } from './utils/sessionSweeper';
+import { tacticalEngine } from './utils/tacticalEngine';
 
 const app = express();
 const PORT = process.env.PORT ?? 3000;
@@ -27,10 +31,10 @@ app.use(helmet());
 const allowedOrigins = process.env.NODE_ENV === 'development'
   ? true
   : (process.env.CORS_ORIGIN
-      ? (process.env.CORS_ORIGIN.includes(',')
-          ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
-          : process.env.CORS_ORIGIN)
-      : '*');
+    ? (process.env.CORS_ORIGIN.includes(',')
+      ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
+      : process.env.CORS_ORIGIN)
+    : '*');
 
 app.use(cors({
   origin: allowedOrigins,
@@ -47,6 +51,10 @@ app.use('/api/v1/auth', authRouter);
 app.use('/api/v1/patrol', patrolRouter);
 app.use('/api/v1/evidence', evidenceRouter);
 app.use('/api/v1/sesiones', sesionesRouter);
+app.use('/api/v1/config', configRouter);
+app.use('/api/v1/tactico', tacticoRouter);
+app.use('/api/v1', uveRouter);
+app.use('/api', uveRouter);
 
 // ── Health check ──────────────────────────────────────────
 app.get('/health', (_req, res) => {
@@ -56,10 +64,13 @@ app.get('/health', (_req, res) => {
 // ── Manejador de errores global ───────────────────────────
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`\n🚔 S.I.G.O. Patrol API corriendo en http://localhost:${PORT}`);
-  console.log(`   Ambiente: ${process.env.NODE_ENV ?? 'development'}\n`);
-  startSessionSweeper();
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`\n🚔 S.I.G.O. Patrol API corriendo en http://localhost:${PORT}`);
+    console.log(`   Ambiente: ${process.env.NODE_ENV ?? 'development'}\n`);
+    startSessionSweeper();
+    tacticalEngine.start().catch(err => console.error('[TacticalEngine] Error al iniciar:', err));
+  });
+}
 
 export default app;

@@ -7,6 +7,7 @@ import { SettingsService, MobileProfile } from '../../core/services/settings.ser
 import { ApiService } from '../../core/services/api.service';
 import { MapService, HOTSPOT_ZONES, HotspotZone, syncDatabaseZones, getRisk } from '../../core/services/map.service';
 import { DashboardStore } from '../dashboard/store/dashboard.store';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-settings',
@@ -86,12 +87,12 @@ import { DashboardStore } from '../dashboard/store/dashboard.store';
                   <input
                     type="number"
                     min="10"
-                    max="1800"
+                    max="7200"
                     step="5"
                     [ngModel]="settings.intervaloRotacionSeg()"
                     (ngModelChange)="onCambioTiempoManual($event)"
                     class="input text-xs font-mono font-bold w-full pr-12"
-                    placeholder="Segundos (ej. 120)"
+                    placeholder="Segundos (ej. 900)"
                   />
                   <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-sigo-muted font-bold pointer-events-none">
                     SEG
@@ -100,15 +101,15 @@ import { DashboardStore } from '../dashboard/store/dashboard.store';
               </div>
 
               <!-- Botones rápidos de tiempo -->
-              <div class="flex items-center gap-1.5 pt-1">
+              <div class="flex flex-wrap items-center gap-1.5 pt-1">
                 <button
-                  *ngFor="let t of [30, 60, 120, 300, 600]"
+                  *ngFor="let opt of opcionesTiempoRotacion"
                   type="button"
-                  (click)="settings.setIntervaloRotacionSeg(t)"
-                  class="px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all"
-                  [ngClass]="settings.intervaloRotacionSeg() === t ? 'bg-sigo-accent text-white border-sigo-accent shadow-xs' : 'bg-sigo-surface border-sigo-border text-sigo-muted hover:text-sigo-text'"
+                  (click)="settings.setIntervaloRotacionSeg(opt.seg)"
+                  class="px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer"
+                  [ngClass]="settings.intervaloRotacionSeg() === opt.seg ? 'bg-sigo-accent text-white border-sigo-accent shadow-xs' : 'bg-sigo-surface border-sigo-border text-sigo-muted hover:text-sigo-text'"
                 >
-                  {{ t < 60 ? t + 's' : (t / 60) + 'm' }}
+                  {{ opt.label }}
                 </button>
               </div>
             </div>
@@ -208,16 +209,16 @@ import { DashboardStore } from '../dashboard/store/dashboard.store';
               </div>
             </div>
 
-            <!-- Selector 1 a 5 -->
-            <div class="flex items-center gap-1.5 bg-sigo-surface2 p-1 rounded-xl border border-sigo-border">
+            <!-- Selector U.V.E. Objetivo para SOS -->
+            <div class="flex flex-wrap items-center gap-1.5 bg-sigo-surface2 p-1 rounded-xl border border-sigo-border">
               <button
-                *ngFor="let num of [1, 2, 3, 4, 5]"
+                *ngFor="let uve of [0.80, 1.00, 1.45, 1.80, 2.00, 2.45, 3.45, 3.80, 4.00]"
                 type="button"
-                (click)="settings.setRecursosSos(num)"
-                class="w-8 h-8 rounded-lg text-xs font-bold transition-all"
-                [ngClass]="settings.recursosSos() === num ? 'bg-red-600 text-white shadow-sm' : 'text-sigo-muted hover:text-sigo-text'"
+                (click)="settings.uveSosObjetivo.set(uve)"
+                class="px-2.5 h-8 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                [ngClass]="settings.uveSosObjetivo() === uve ? 'bg-red-600 text-white shadow-sm' : 'text-sigo-muted hover:text-sigo-text'"
               >
-                {{ num }}
+                {{ uve | number:'1.2-2' }}
               </button>
             </div>
           </div>
@@ -225,10 +226,10 @@ import { DashboardStore } from '../dashboard/store/dashboard.store';
           <div class="p-3 rounded-xl bg-sigo-surface2/60 border border-sigo-border text-xs space-y-1.5">
             <p class="text-sigo-text font-semibold flex items-center gap-2">
               <span class="w-2 h-2 rounded-full bg-red-500"></span>
-              Configurado actualmente: {{ settings.recursosSos() }} patrulla{{ settings.recursosSos() > 1 ? 's' : '' }} requerida{{ settings.recursosSos() > 1 ? 's' : '' }}
+              Objetivo SOS configurado: {{ settings.uveSosObjetivo() | number:'1.2-2' }} U.V.E.
             </p>
             <p class="text-[11px] text-sigo-muted">
-              Al emitirse una alerta de emergencia desde el móvil, el sistema convocará a los <b>{{ settings.recursosSos() }} móviles más cercanos</b> mediante el algoritmo geográfico (o requerirá que el operador seleccione manualmente {{ settings.recursosSos() }} unidades activas).
+              Al emitirse una alerta SOS desde el móvil, el algoritmo despachará unidades cercanas hasta cubrir <b>{{ settings.uveSosObjetivo() | number:'1.2-2' }} U.V.E.</b> priorizando <b>Patrullas y Furgones</b> (usando Moto para rellenar). Bicicletas y caminantes no atienden SOS, pero sí pueden solicitarlo.
             </p>
           </div>
         </div>
@@ -500,7 +501,19 @@ export class SettingsComponent implements OnInit {
     await Promise.all([
       this.cargarUsuarios(),
       this.cargarZonas(),
+      this.sincronizarAjustesServidor(),
     ]);
+  }
+
+  async sincronizarAjustesServidor(): Promise<void> {
+    try {
+      const res = await fetch(`${environment.apiBaseUrl}/tactico/estado`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.k_zonas) this.settings.cantidadZonasRotacion.set(Number(data.k_zonas));
+        if (data.intervalo_rotacion_seg) this.settings.intervaloRotacionSeg.set(Number(data.intervalo_rotacion_seg));
+      }
+    } catch {}
   }
 
   async cargarZonas(): Promise<void> {
@@ -512,17 +525,30 @@ export class SettingsComponent implements OnInit {
     }
   }
 
+  readonly opcionesTiempoRotacion = [
+    { seg: 900, label: '15 min' },
+    { seg: 1200, label: '20 min' },
+    { seg: 1800, label: '30 min' },
+    { seg: 2700, label: '45 min' },
+    { seg: 3600, label: '1 hora' },
+    { seg: 7200, label: '2 horas' },
+  ];
+
   formatTiempo(segundos: number): string {
+    if (segundos >= 3600 && segundos % 3600 === 0) {
+      const h = segundos / 3600;
+      return h === 1 ? '1 hora' : `${h} horas`;
+    }
     const min = Math.floor(segundos / 60);
     const sec = segundos % 60;
     if (min === 0) return `${sec}s`;
-    if (sec === 0) return `${min}m`;
+    if (sec === 0) return `${min} min`;
     return `${min}m ${sec}s`;
   }
 
   onCambioTiempoManual(val: any): void {
     const n = Number(val);
-    if (!isNaN(n) && n >= 10 && n <= 1800) {
+    if (!isNaN(n) && n >= 10 && n <= 7200) {
       this.settings.setIntervaloRotacionSeg(n);
     }
   }

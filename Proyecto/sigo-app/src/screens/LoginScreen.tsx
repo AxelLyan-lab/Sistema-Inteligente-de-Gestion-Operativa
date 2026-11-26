@@ -20,18 +20,20 @@ import { verifyCredentials, validateCompanion, getVehicles } from '../services/a
 import { Spacing, BorderRadius, Fonts, ThemeColors } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import Icon, { IconName } from '../components/Icon';
-import { TipoTransporte, Funcionario } from '../types';
+import { TipoTransporte, Funcionario, calcularUveMovil } from '../types';
 
-// ─── Opciones de tipo de patrullaje ─────────────────────────────────────────
-const TRANSPORT_OPTIONS: { label: string; value: TipoTransporte; icon: IconName; desc: string }[] = [
-  { label: 'Radio Patrulla', value: 'PATRULLA', icon: 'auto', desc: 'Auto / Móvil' },
-  { label: 'Moto', value: 'MOTO', icon: 'moto', desc: 'Motocicleta' },
-  { label: 'Bicicleta', value: 'BICICLETA', icon: 'bici', desc: 'Ciclo patrulla' },
-  { label: 'Infantería', value: 'INFANTERIA', icon: 'peaton', desc: 'A pie / Peatonal' },
+// ─── Opciones de tipo de patrullaje con configuración U.V.E. ────────────────
+const TRANSPORT_OPTIONS: { label: string; value: TipoTransporte; icon: IconName; desc: string; uveBadge: string }[] = [
+  { label: 'Radio Patrulla', value: 'PATRULLA', icon: 'auto', desc: 'RPD (2) / RPT (3)', uveBadge: '0.80 - 1.00 U.V.E.' },
+  { label: 'Furgón Z', value: 'FURGON_Z', icon: 'furgon', desc: 'Mín. 2 / Máx. 3 trip.', uveBadge: '1.00 U.V.E.' },
+  { label: 'Moto TT', value: 'MOTO', icon: 'moto', desc: 'Líder individual', uveBadge: '0.45 U.V.E.' },
+  { label: 'Bicicleta', value: 'BICICLETA', icon: 'bici', desc: 'Pareja servicio', uveBadge: '0.30 U.V.E.' },
+  { label: 'Infantería', value: 'INFANTERIA', icon: 'peaton', desc: 'A pie / Pareja', uveBadge: '0.20 U.V.E.' },
 ];
 
-const DEFAULT_UNITS: Record<TipoTransporte, string[]> = {
+const DEFAULT_UNITS: Partial<Record<TipoTransporte, string[]>> = {
   PATRULLA: ['RP-201', 'RP-402'],
+  FURGON_Z: ['FZ-101', 'FZ-102'],
   MOTO: ['MT-105', 'MT-108'],
   BICICLETA: ['BC-021'],
   INFANTERIA: ['INF-01'],
@@ -68,23 +70,37 @@ export default function LoginScreen() {
   const [companionRut, setCompanionRut] = useState('');
   const [companions, setCompanions] = useState<CompanionItem[]>([]);
   const [validatingCompanion, setValidatingCompanion] = useState(false);
-  const [unitSuggestions, setUnitSuggestions] = useState<string[]>(DEFAULT_UNITS['PATRULLA']);
+  const [unitSuggestions, setUnitSuggestions] = useState<string[]>(DEFAULT_UNITS['PATRULLA'] ?? []);
 
   const [loading, setLoading] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
   // Cargar vehículos al cambiar medio de transporte
   useEffect(() => {
-    setUnitSuggestions(DEFAULT_UNITS[tipoTransporte] ?? []);
-    if (DEFAULT_UNITS[tipoTransporte]?.length > 0) {
-      setIdentificadorUnidad(DEFAULT_UNITS[tipoTransporte][0]);
+    const units = DEFAULT_UNITS[tipoTransporte] ?? [];
+    setUnitSuggestions(units);
+    if (units.length > 0) {
+      setIdentificadorUnidad(units[0]);
     }
-    // Si no es Radio Patrulla, vaciar acompañantes (Moto, Bici, Infantería operan solos)
-    if (tipoTransporte !== 'PATRULLA') {
+    // Si es Moto Todo Terreno (MTT), opera estrictamente con 1 funcionario individual
+    if (tipoTransporte === 'MOTO') {
       setCompanions([]);
       setCompanionRut('');
+    } else if ((tipoTransporte === 'BICICLETA' || tipoTransporte === 'INFANTERIA') && companions.length > 1) {
+      setCompanions(prev => prev.slice(0, 1));
     }
   }, [tipoTransporte]);
+
+  const maxCompanionsAllowed =
+    tipoTransporte === 'PATRULLA' || tipoTransporte === 'FURGON_Z'
+      ? 2
+      : tipoTransporte === 'BICICLETA' || tipoTransporte === 'INFANTERIA'
+        ? 1
+        : 0;
+
+  // Regla obligatoria Furgón Z: mínimo 2 funcionarios (Líder + al menos 1 acompañante)
+  const isFurgonZMissingCompanion = tipoTransporte === 'FURGON_Z' && companions.length < 1;
+  const previewUve = calcularUveMovil(tipoTransporte, companions.length, identificadorUnidad);
 
   const shakeForm = () => {
     Animated.sequence([
@@ -129,13 +145,16 @@ export default function LoginScreen() {
 
   // ── PASO 2: Validar y agregar compañero libre ─────────────────────────────
   const handleAddCompanion = async () => {
-    if (tipoTransporte !== 'PATRULLA') {
-      Alert.alert('Medio Individual', 'Moto, Bicicleta e Infantería operan con 1 solo funcionario (sin acompañantes).');
+    if (maxCompanionsAllowed === 0) {
+      Alert.alert('Medio Individual', 'Moto Todo Terreno (MTT) opera con 1 solo funcionario (Líder individual - 0.45 U.V.E.).');
       return;
     }
 
-    if (companions.length >= 2) {
-      Alert.alert('Límite de Dotación', 'Radio Patrulla admite un máximo de 2 acompañantes (dotación total: 3 funcionarios).');
+    if (companions.length >= maxCompanionsAllowed) {
+      Alert.alert(
+        'Límite de Dotación',
+        `Este medio admite un máximo de ${maxCompanionsAllowed} acompañante(s) (dotación total: ${maxCompanionsAllowed + 1} funcionarios).`
+      );
       return;
     }
 
@@ -185,7 +204,16 @@ export default function LoginScreen() {
   // ── PASO 2: Iniciar despliegue en terreno ─────────────────────────────────
   const handleDeploy = async () => {
     if (!identificadorUnidad.trim()) {
-      Alert.alert('Unidad Requerida', 'Indica el identificador de la unidad (ej: RP-402, MT-105).');
+      Alert.alert('Unidad Requerida', 'Indica el identificador de la unidad (ej: RP-402, FZ-101, MT-105).');
+      return;
+    }
+
+    if (isFurgonZMissingCompanion) {
+      shakeForm();
+      Alert.alert(
+        'Dotación Mínima Furgón Z',
+        'El Furgón Z (FZ) requiere obligatoriamente al menos 1 acompañante registrado (mínimo 2 tripulantes: Líder + 1 acompañante).'
+      );
       return;
     }
 
@@ -211,7 +239,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.backgroundDark} />
+      <StatusBar barStyle="light-content" {...({ backgroundColor: Colors.backgroundDark } as any)} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -333,7 +361,7 @@ export default function LoginScreen() {
                   </View>
                 </View>
 
-                <Text style={styles.sectionHeader}>1. Medio de Transporte para este Turno</Text>
+                <Text style={styles.sectionHeader}>1. Medio de Transporte y Capacidad U.V.E.</Text>
                 <View style={styles.transportGrid}>
                   {TRANSPORT_OPTIONS.map(opt => (
                     <TouchableOpacity
@@ -347,7 +375,7 @@ export default function LoginScreen() {
                     >
                       <Icon
                         name={opt.icon}
-                        size={28}
+                        size={26}
                         color={tipoTransporte === opt.value ? Colors.primary : Colors.textSecondary}
                       />
                       <Text
@@ -359,8 +387,40 @@ export default function LoginScreen() {
                         {opt.label}
                       </Text>
                       <Text style={styles.transportDesc}>{opt.desc}</Text>
+                      <View
+                        style={[
+                          styles.uvePill,
+                          tipoTransporte === opt.value && styles.uvePillActive,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.uvePillText,
+                            tipoTransporte === opt.value && styles.uvePillTextActive,
+                          ]}
+                        >
+                          {opt.uveBadge}
+                        </Text>
+                      </View>
                     </TouchableOpacity>
                   ))}
+                </View>
+
+                {/* Preview dinámico de U.V.E. calculada */}
+                <View style={styles.uvePreviewBanner}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.uvePreviewLabel}>
+                      CARGA OPERATIVA ASIGNADA ({previewUve.tipoMedio})
+                    </Text>
+                    <Text style={styles.uvePreviewSub}>
+                      {previewUve.nombreMedio} · Dotación: {previewUve.dotacionTotal} func.
+                    </Text>
+                  </View>
+                  <View style={styles.uvePreviewValueBox}>
+                    <Text style={styles.uvePreviewValueText}>
+                      {previewUve.valorUve.toFixed(2)} U.V.E.
+                    </Text>
+                  </View>
                 </View>
 
                 {/* Identificador de unidad */}
@@ -408,23 +468,39 @@ export default function LoginScreen() {
                   <View style={styles.labelRow}>
                     <Icon name="grupo" size={16} color={Colors.textSecondary} />
                     <Text style={styles.fieldLabel}>
-                      Dotación de Turno {tipoTransporte === 'PATRULLA' ? `(${companions.length}/2 acompañantes)` : '(Individual)'}
+                      Dotación de Turno{' '}
+                      {maxCompanionsAllowed > 0
+                        ? `(${companions.length}/${maxCompanionsAllowed} acompañantes)`
+                        : '(Individual)'}
                     </Text>
                   </View>
 
-                  {tipoTransporte !== 'PATRULLA' ? (
+                  {maxCompanionsAllowed === 0 ? (
                     <View style={[styles.companionList, { backgroundColor: Colors.surface, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border }]}>
                       <Text style={{ fontSize: 12, color: Colors.textSecondary, lineHeight: 18 }}>
-                        ℹ️ <Text style={{ fontWeight: 'bold' }}>Transporte individual:</Text> {tipoTransporte === 'MOTO' ? 'Moto' : tipoTransporte === 'BICICLETA' ? 'Bicicleta' : 'Infantería'} opera con 1 solo funcionario (sin acompañantes).
+                        ℹ️ <Text style={{ fontWeight: 'bold' }}>Moto Todo Terreno (MTT):</Text> Opera con 1 funcionario individual (0.45 U.V.E.).
                       </Text>
                     </View>
                   ) : (
                     <>
                       <Text style={styles.fieldHelp}>
-                        Radio Patrulla permite sumar hasta 2 compañeros disponibles que no tengan sesión activa.
+                        {tipoTransporte === 'FURGON_Z'
+                          ? 'Furgón Z (FZ) exige un MÍNIMO OBLIGATORIO de 1 acompañante (2 tripulantes) y permite hasta 2 acompañantes (3 tripulantes = 1.00 U.V.E.).'
+                          : tipoTransporte === 'PATRULLA'
+                            ? 'Radio Patrulla: 1 acompañante = RPD (0.80 U.V.E.) · 2 acompañantes = RPT (1.00 U.V.E.).'
+                            : 'Pareja de servicio: permite registrar 1 acompañante.'}
                       </Text>
 
-                      {companions.length < 2 && (
+                      {isFurgonZMissingCompanion && (
+                        <View style={styles.furgonWarningBox}>
+                          <Icon name="alerta" size={16} color={Colors.danger} />
+                          <Text style={styles.furgonWarningText}>
+                            Requisito Furgón Z: Registra al menos 1 acompañante para habilitar el inicio de turno (mínimo 2 funcionarios).
+                          </Text>
+                        </View>
+                      )}
+
+                      {companions.length < maxCompanionsAllowed && (
                         <View style={styles.companionInputRow}>
                           <TextInput
                             style={[styles.input, styles.companionInput]}
@@ -452,10 +528,10 @@ export default function LoginScreen() {
                         </View>
                       )}
 
-                      {companions.length >= 2 && (
+                      {companions.length >= maxCompanionsAllowed && (
                         <View style={{ paddingVertical: 6 }}>
                           <Text style={{ fontSize: 11, color: Colors.warning, fontWeight: '600' }}>
-                            ✓ Capacidad máxima alcanzada (2 acompañantes + 1 conductor = 3 funcionarios).
+                            ✓ Capacidad máxima alcanzada ({maxCompanionsAllowed} acompañante(s) + 1 líder = {maxCompanionsAllowed + 1} funcionarios).
                           </Text>
                         </View>
                       )}
@@ -486,11 +562,14 @@ export default function LoginScreen() {
                   )}
                 </View>
 
-                {/* Botón de despliegue */}
+                {/* Botón de despliegue (deshabilitado si es Furgón Z sin al menos 1 acompañante) */}
                 <TouchableOpacity
-                  style={[styles.deployBtn, loading && styles.loginBtnDisabled]}
+                  style={[
+                    styles.deployBtn,
+                    (loading || isFurgonZMissingCompanion) && styles.loginBtnDisabled,
+                  ]}
                   onPress={handleDeploy}
-                  disabled={loading}
+                  disabled={loading || isFurgonZMissingCompanion}
                   activeOpacity={0.85}
                 >
                   {loading ? (
@@ -498,7 +577,11 @@ export default function LoginScreen() {
                   ) : (
                     <>
                       <Icon name="flecha" size={18} color={Colors.onPrimary} />
-                      <Text style={styles.loginBtnText}>INICIAR PATRULLAJE</Text>
+                      <Text style={styles.loginBtnText}>
+                        {isFurgonZMissingCompanion
+                          ? 'AGREGA 1 ACOMPAÑANTE (FURGÓN Z)'
+                          : `INICIAR PATRULLAJE (${previewUve.valorUve.toFixed(2)} U.V.E.)`}
+                      </Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -715,6 +798,79 @@ const makeStyles = (Colors: ThemeColors) => StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
     marginTop: 2,
+  },
+  uvePill: {
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  uvePillActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  uvePillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  uvePillTextActive: {
+    color: Colors.onPrimary,
+  },
+  uvePreviewBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.primarySoft,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  uvePreviewLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.primary,
+    letterSpacing: 0.6,
+  },
+  uvePreviewSub: {
+    fontSize: Fonts.sizes.xs,
+    color: Colors.textPrimary,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  uvePreviewValueBox: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.md,
+  },
+  uvePreviewValueText: {
+    color: Colors.onPrimary,
+    fontSize: Fonts.sizes.sm,
+    fontWeight: '700',
+  },
+  furgonWarningBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.dangerLight,
+    borderWidth: 1,
+    borderColor: Colors.danger,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  furgonWarningText: {
+    flex: 1,
+    fontSize: 11,
+    color: Colors.danger,
+    fontWeight: '600',
+    lineHeight: 16,
   },
 
   // ── Sugerencias de unidad ────────────────────────────────

@@ -1,16 +1,11 @@
 {
   "expo": {
-    "name": "S.I.G.O. Patrol",
+    "name": "SIGO",
     "slug": "sigo-patrol-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1A1A2E"
-    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -27,7 +22,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1A1A2E"
+        "backgroundColor": "#0B2B1C"
       },
       "package": "cl.sigo.patrolapp",
       "config": {
@@ -36,19 +31,41 @@
         }
       },
       "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "ACCESS_WIFI_STATE",
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "WAKE_LOCK",
+        "VIBRATE",
         "CAMERA",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
-        "INTERNET"
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "READ_MEDIA_AUDIO",
+        "POST_NOTIFICATIONS"
       ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#1A1A2E"
+        }
+      ],
+      "expo-font",
+      "expo-asset",
       "expo-secure-store",
       "expo-location",
       [
@@ -64,10 +81,11 @@
           "cameraPermission": "S.I.G.O. Patrol necesita la cámara para capturar evidencias."
         }
       ],
-      "expo-audio"
+      "expo-audio",
+      "expo-status-bar"
     ],
     "extra": {
-      "apiBaseUrl": "https://frequency-unknown-pay-aquatic.trycloudflare.com/api/v1",
+      "apiBaseUrl": "https://sigo-api-243815551696.southamerica-west1.run.app/api/v1",
       "supabaseUrl": "https://cjyrlgpnqkahhyqgyyvu.supabase.co",
       "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNqeXJsZ3BucWthaGh5cWd5eXZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc4NDI4MjQsImV4cCI6MjEwMzQxODgyNH0.bWBsBriCLAUnTQMG1DXSaDzJDMXauoNFuK2ZdwiC3hA"
     }

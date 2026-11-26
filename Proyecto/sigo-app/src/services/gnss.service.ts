@@ -35,10 +35,22 @@ export interface TelemetryPayload {
   timestamp_gps: string;   // ISO
 }
 
+export interface ZonaRiesgoActiva {
+  id: string;
+  nombre: string;
+  nivel_riesgo: 'ALTO' | 'MEDIO' | 'BAJO';
+  score_gravedad: number;
+  centro_lat?: number;
+  centro_lng?: number;
+  radio_m?: number;
+}
+
 export interface TelemetryResult {
   ok: boolean;
   patrol_id?: number;
   timestamp_srv?: string;
+  en_zona_riesgo?: boolean;
+  zona_riesgo?: ZonaRiesgoActiva | null;
   error?: string;
 }
 

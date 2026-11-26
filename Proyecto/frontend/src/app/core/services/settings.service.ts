@@ -1,4 +1,5 @@
 import { Injectable, signal, effect } from '@angular/core';
+import { environment } from '../../../environments/environment';
 
 export interface MobileProfile {
   rut_usuario: string;
@@ -17,11 +18,11 @@ export class SettingsService {
     localStorage.getItem('sigo_bucle_zonas') !== 'false'
   );
 
-  // Intervalo de rotación contrarreloj (en segundos, por defecto 120s / 2 min)
+  // Intervalo de rotación contrarreloj (en segundos, por defecto 900s / 15 min)
   readonly intervaloRotacionSeg = signal<number>(
     (() => {
       const saved = Number(localStorage.getItem('sigo_intervalo_rotacion'));
-      return saved >= 10 && saved <= 1800 ? saved : 120;
+      return saved >= 10 && saved <= 7200 ? saved : 900;
     })()
   );
 
@@ -51,6 +52,14 @@ export class SettingsService {
     (() => {
       const saved = Number(localStorage.getItem('sigo_recursos_sos'));
       return saved >= 1 && saved <= 5 ? saved : 2;
+    })()
+  );
+
+  // U.V.E. objetivo configurable para atender alertas SOS (ej: 0.80, 1.00, 1.50, 2.00)
+  readonly uveSosObjetivo = signal<number>(
+    (() => {
+      const saved = Number(localStorage.getItem('sigo_uve_sos_objetivo'));
+      return saved >= 0.45 && saved <= 5 ? saved : 1.00;
     })()
   );
 
@@ -87,11 +96,16 @@ export class SettingsService {
       localStorage.setItem('sigo_recursos_sos', String(this.recursosSos()));
     });
     effect(() => {
+      localStorage.setItem('sigo_uve_sos_objetivo', String(this.uveSosObjetivo()));
+    });
+    effect(() => {
       localStorage.setItem('sigo_tiempo_llegada_min', String(this.tiempoLlegadaMin()));
     });
     effect(() => {
       localStorage.setItem('sigo_modo_tiempo_llegada', this.modoTiempoLlegada());
     });
+    // Sincronizar al iniciar el tiempo límite de llegada y configuración con sigo-api
+    setTimeout(() => this.syncTacticoConfig(), 300);
   }
 
   setBucleZonas(activo: boolean): void {
@@ -105,14 +119,32 @@ export class SettingsService {
     }
   }
 
+  public syncTacticoConfig(
+    kZonas = this.cantidadZonasRotacion(),
+    intervaloSeg = this.intervaloRotacionSeg(),
+    tiempoLlegadaMin = this.tiempoLlegadaMin()
+  ): void {
+    fetch(`${environment.apiBaseUrl}/tactico/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        k_zonas: kZonas,
+        intervalo_rotacion_seg: intervaloSeg,
+        tiempo_llegada_min: tiempoLlegadaMin,
+      }),
+    }).catch(() => {});
+  }
+
   setIntervaloRotacionSeg(segundos: number): void {
-    const clamped = Math.max(10, Math.min(1800, Math.round(segundos)));
+    const clamped = Math.max(10, Math.min(7200, Math.round(segundos)));
     this.intervaloRotacionSeg.set(clamped);
+    this.syncTacticoConfig(this.cantidadZonasRotacion(), clamped, this.tiempoLlegadaMin());
   }
 
   setCantidadZonasRotacion(cantidad: number): void {
     const clamped = Math.max(1, Math.min(5, Math.round(cantidad)));
     this.cantidadZonasRotacion.set(clamped);
+    this.syncTacticoConfig(clamped, this.intervaloRotacionSeg(), this.tiempoLlegadaMin());
   }
 
   toggleZonaManual(idZona: number): void {
@@ -132,11 +164,21 @@ export class SettingsService {
   setTiempoLlegadaPreset(minutos: number): void {
     this.modoTiempoLlegada.set('PRESET');
     this.tiempoLlegadaMin.set(minutos);
+    try {
+      localStorage.setItem('sigo_modo_tiempo_llegada', 'PRESET');
+      localStorage.setItem('sigo_tiempo_llegada_min', String(minutos));
+    } catch {}
+    this.syncTacticoConfig(this.cantidadZonasRotacion(), this.intervaloRotacionSeg(), minutos);
   }
 
   setTiempoLlegadaManual(minutos: number): void {
     const clamped = Math.max(1, Math.min(120, Math.round(minutos || 1)));
     this.modoTiempoLlegada.set('MANUAL');
     this.tiempoLlegadaMin.set(clamped);
+    try {
+      localStorage.setItem('sigo_modo_tiempo_llegada', 'MANUAL');
+      localStorage.setItem('sigo_tiempo_llegada_min', String(clamped));
+    } catch {}
+    this.syncTacticoConfig(this.cantidadZonasRotacion(), this.intervaloRotacionSeg(), clamped);
   }
 }

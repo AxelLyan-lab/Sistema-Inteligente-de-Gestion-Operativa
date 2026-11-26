@@ -12,13 +12,14 @@ import { ApiService } from '../../core/services/api.service';
 import { SupabaseService } from '../../core/services/supabase.service';
 import {
   SesionOperativa, EstadoOperativo, TipoTransporte,
-  ESTADO_CONFIG, EstadoConfig,
+  ESTADO_CONFIG, EstadoConfig, calcularUveSesion,
 } from '../../core/models';
+import { environment } from '../../../environments/environment';
 
 @Component({
-  selector:        'app-units',
-  standalone:      true,
-  imports:         [CommonModule, RouterModule, FormsModule, NavbarComponent, IconComponent, DispatchModalComponent],
+  selector: 'app-units',
+  standalone: true,
+  imports: [CommonModule, RouterModule, FormsModule, NavbarComponent, IconComponent, DispatchModalComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
   <div class="min-h-screen bg-sigo-bg text-sigo-text flex flex-col select-none">
@@ -40,6 +41,9 @@ import {
         </div>
 
         <div class="flex items-center gap-3">
+          <span class="px-3 py-1.5 bg-sigo-accent/15 border border-sigo-accent/40 rounded-lg text-sigo-accent text-xs font-bold">
+            U.V.E total disponible: {{ totalUveActiva() | number:'1.2-2' }}
+          </span>
           <span class="px-3 py-1.5 bg-sigo-surface border border-sigo-border rounded-lg text-sigo-muted text-xs font-medium">
             {{ sesionesFiltradas().length }} sesiones activas
           </span>
@@ -50,8 +54,8 @@ import {
         </div>
       </div>
 
-      <!-- Tarjetas de resumen -->
-      <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+      <!-- Tarjetas de resumen (sin Inactivos) -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
         @for (est of estadosResumen; track est.estado) {
           <div
             class="card text-center cursor-pointer hover:border-sigo-accent/40 transition-all p-3"
@@ -87,14 +91,16 @@ import {
           <label class="text-sigo-muted font-medium">Transporte:</label>
           <select
             id="filter-transporte"
-            class="input-field py-1.5 text-xs w-32"
+            class="input-field py-1.5 text-xs w-36"
             [ngModel]="filtroTransporte()"
             (ngModelChange)="filtroTransporte.set($event)"
           >
             <option value="">Todos</option>
-            <option value="PATRULLA">Patrulla</option>
-            <option value="MOTO">Moto</option>
-            <option value="BICICLETA">Bicicleta</option>
+            <option value="PATRULLA">Radiopatrulla (RPT/RPD)</option>
+            <option value="FURGON_Z">Furgón Z (FZ)</option>
+            <option value="MOTO">Moto TT (MTT)</option>
+            <option value="BICICLETA">Bicicleta (CB)</option>
+            <option value="INFANTERIA">Infantería (INF)</option>
           </select>
         </div>
 
@@ -176,10 +182,16 @@ import {
                       </div>
                     </td>
                     <td class="px-4 py-3">
-                      <span class="flex items-center gap-1.5 text-sigo-text">
-                        <app-icon [name]="getTransportIcon(sesion.tipo_transporte)" [size]="16" color="var(--sigo-accent)"></app-icon>
-                        <span class="text-[11px] text-sigo-muted">{{ sesion.tipo_transporte }}</span>
-                      </span>
+                      <div class="flex flex-col gap-1">
+                        <span class="flex items-center gap-1.5 text-sigo-text">
+                          <app-icon [name]="getTransportIcon(sesion.tipo_transporte)" [size]="16" color="var(--sigo-accent)"></app-icon>
+                          <span class="text-[11px] font-bold text-sigo-text">{{ getUve(sesion).tipoMedio }}</span>
+                          <span class="text-[10px] text-sigo-muted">({{ sesion.tipo_transporte }})</span>
+                        </span>
+                        <span class="inline-flex w-fit items-center px-1.5 py-0.5 rounded bg-sigo-accent/15 text-sigo-accent border border-sigo-accent/30 text-[10px] font-extrabold">
+                          {{ getUve(sesion).valorUve | number:'1.2-2' }} U.V.E.
+                        </span>
+                      </div>
                     </td>
                     <td class="px-4 py-3">
                       <span class="flex items-center gap-1.5">
@@ -379,32 +391,35 @@ import {
   `,
 })
 export class UnitsComponent implements OnInit, OnDestroy {
-  private readonly apiService      = inject(ApiService);
+  private readonly apiService = inject(ApiService);
   private readonly supabaseService = inject(SupabaseService);
-  private readonly router          = inject(Router);
+  private readonly router = inject(Router);
 
-  readonly cargando  = signal(false);
-  readonly sesiones  = signal<SesionOperativa[]>([]);
+  readonly cargando = signal(false);
+  readonly sesiones = signal<SesionOperativa[]>([]);
 
-  readonly filtroEstado     = signal('');
+  readonly filtroEstado = signal('');
   readonly filtroTransporte = signal('');
-  readonly filtroTexto      = signal('');
+  readonly filtroTexto = signal('');
 
   sesionSeleccionadaParaDespacho: SesionOperativa | null = null;
   sesionParaTripulacion: SesionOperativa | null = null;
 
   private subSesiones?: any;
   private subTripulacion?: any;
+  private syncTimer?: any;
 
-  readonly estadosResumen = Object.values(EstadoOperativo).map(e => ({
-    estado: e, config: ESTADO_CONFIG[e],
-  }));
+  readonly estadosResumen = Object.values(EstadoOperativo)
+    .filter(e => e !== EstadoOperativo.INACTIVO)
+    .map(e => ({
+      estado: e, config: ESTADO_CONFIG[e],
+    }));
 
   readonly sesionesFiltradas = computed(() =>
     this.sesiones().filter(s => {
       const matchEstado = !this.filtroEstado() || s.estado_operativo === this.filtroEstado();
-      const matchTrans  = !this.filtroTransporte() || s.tipo_transporte === this.filtroTransporte();
-      const matchText   = !this.filtroTexto() ||
+      const matchTrans = !this.filtroTransporte() || s.tipo_transporte === this.filtroTransporte();
+      const matchText = !this.filtroTexto() ||
         s.rut_conductor.toLowerCase().includes(this.filtroTexto().toLowerCase()) ||
         (s.conductor?.nombre_completo ?? '').toLowerCase().includes(this.filtroTexto().toLowerCase()) ||
         (s.identificador_unidad ?? '').toLowerCase().includes(this.filtroTexto().toLowerCase());
@@ -412,7 +427,19 @@ export class UnitsComponent implements OnInit, OnDestroy {
     })
   );
 
-  conteo     = (estado: EstadoOperativo) => this.sesiones().filter(s => s.estado_operativo === estado).length;
+  readonly totalUveActiva = computed(() =>
+    Number(
+      this.sesionesFiltradas()
+        .reduce((acc, s) => acc + this.getUve(s).valorUve, 0)
+        .toFixed(2)
+    )
+  );
+
+  getUve(s: SesionOperativa) {
+    return calcularUveSesion(s);
+  }
+
+  conteo = (estado: EstadoOperativo) => this.sesiones().filter(s => s.estado_operativo === estado).length;
   estadoConf = (estado?: any): EstadoConfig =>
     ESTADO_CONFIG[estado as EstadoOperativo] || ESTADO_CONFIG[EstadoOperativo.DISPONIBLE];
 
@@ -427,10 +454,14 @@ export class UnitsComponent implements OnInit, OnDestroy {
     this.subTripulacion = this.supabaseService.subscribeToTripulacion(() => {
       this.cargarSilencioso();
     });
+    this.syncTimer = setInterval(() => {
+      this.cargarSilencioso();
+    }, 2000);
   }
 
   ngOnDestroy(): void {
     try {
+      if (this.syncTimer) clearInterval(this.syncTimer);
       this.subSesiones?.unsubscribe?.();
       this.subTripulacion?.unsubscribe?.();
     } catch (e) {
@@ -462,40 +493,70 @@ export class UnitsComponent implements OnInit, OnDestroy {
       }
     }
 
-    // Cargar patrullas ficticias / RP de prueba desde localStorage
+    // Cargar patrullas demo sincronizadas en tiempo real desde el Motor Táctico 24/7 del servidor
     let ficticias: any[] = [];
     try {
-      const saved = localStorage.getItem('sigo_patrullas_ficticias');
-      if (saved) {
-        const list = JSON.parse(saved);
-        if (Array.isArray(list)) {
-          ficticias = list.map((p: any, idx: number) => ({
+      let list: any[] = [];
+      const res = await fetch(`${environment.apiBaseUrl}/tactico/estado`).catch(() => null);
+      if (res && res.ok) {
+        const estadoServer = await res.json();
+        if (Array.isArray(estadoServer?.patrullas)) {
+          list = estadoServer.patrullas;
+        }
+      } else {
+        const saved = localStorage.getItem('sigo_patrullas_ficticias');
+        if (saved) list = JSON.parse(saved) || [];
+      }
+
+      if (Array.isArray(list)) {
+        ficticias = list.map((p: any, idx: number) => {
+          const destinoNombre = p.destino_zona_json?.name || p.destinoZone?.name || null;
+          const medio = p.tipo_medio || p.tipo || 'RPD';
+          const tipoTrans =
+            medio === 'FZ' || medio === 'FURGON_Z'
+              ? 'FURGON_Z'
+              : medio === 'MTT' || medio === 'MOTO'
+                ? 'MOTO'
+                : medio === 'CB' || medio === 'BICICLETA'
+                  ? 'BICICLETA'
+                  : medio === 'INF' || medio === 'INFANTERIA'
+                    ? 'INFANTERIA'
+                    : 'PATRULLA';
+          const estadoOp =
+            p.estado === 'PATRULLANDO'
+              ? EstadoOperativo.PATRULLANDO_ZONA
+              : p.estado === 'EN_RUTA'
+                ? EstadoOperativo.EN_RUTA_HOTSPOT
+                : EstadoOperativo.DISPONIBLE;
+          return {
             id_sesion: 99000 + idx,
             identificador_unidad: p.nombre || `RP-PRUEBA-${idx + 1}`,
             rut_conductor: 'SIMULADO',
             conductor: {
               rut_usuario: 'SIMULADO',
-              nombre_completo: 'Dotación Ficticia',
+              nombre_completo: 'Dotación Táctica 24/7',
               rol: 'FUNCIONARIO'
             },
-            tipo_transporte: p.tipo || 'PATRULLA',
-            estado_operativo: p.estado || 'DISPONIBLE',
-            asignacion_activa: p.destinoZone ? {
+            tipo_transporte: tipoTrans,
+            tipo_medio: medio,
+            valor_uve: p.valor_uve,
+            estado_operativo: estadoOp,
+            asignacion_activa: destinoNombre ? {
               id_asignacion: 99000 + idx,
               id_sesion: 99000 + idx,
-              nombre_zona: p.destinoZone.name,
-              origen_asignacion: p.isManual ? 'MANUAL' : 'ALGORITMO',
+              nombre_zona: destinoNombre,
+              origen_asignacion: (p.is_manual ?? p.isManual) ? 'MANUAL' : 'ALGORITMO',
               estado: 'EN_CURSO',
               fecha_asignacion: new Date().toISOString()
             } : null,
             fecha_inicio: new Date().toISOString(),
             es_ficticia: true,
             ficticiaRaw: p
-          }));
-        }
+          };
+        });
       }
     } catch (e) {
-      console.warn('[UnitsComponent] Error leyendo patrullas ficticias:', e);
+      console.warn('[UnitsComponent] Error leyendo patrullas tácticas:', e);
     }
 
     this.sesiones.set([...data, ...ficticias]);
@@ -519,10 +580,20 @@ export class UnitsComponent implements OnInit, OnDestroy {
 
   getTransportIcon(tipo?: string): string {
     switch (tipo) {
-      case 'MOTO': return 'moto';
-      case 'BICICLETA': return 'bici';
-      case 'INFANTERIA': return 'peaton';
-      default: return 'auto';
+      case 'FURGON_Z':
+      case 'FZ':
+        return 'furgon';
+      case 'MOTO':
+      case 'MTT':
+        return 'moto';
+      case 'BICICLETA':
+      case 'CB':
+        return 'bici';
+      case 'INFANTERIA':
+      case 'INF':
+        return 'peaton';
+      default:
+        return 'auto';
     }
   }
 }

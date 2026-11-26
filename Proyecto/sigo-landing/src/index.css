@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    background-color: #03211b;
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    overflow-x: hidden;
+    background: radial-gradient(circle at 12% 10%, rgba(163, 230, 53, 0.34) 0%, transparent 42%),
+      radial-gradient(circle at 86% 14%, rgba(6, 182, 212, 0.36) 0%, transparent 45%),
+      radial-gradient(circle at 50% 48%, rgba(16, 185, 129, 0.32) 0%, transparent 55%),
+      radial-gradient(circle at 18% 82%, rgba(45, 212, 191, 0.3) 0%, transparent 48%),
+      radial-gradient(circle at 88% 86%, rgba(132, 204, 22, 0.28) 0%, transparent 45%),
+      linear-gradient(155deg, #031e19 0%, #053228 38%, #042f2e 70%, #021c1a 100%);
+    background-attachment: fixed;
+  }
+}
+
+/* Apple Liquid Glass Material System */
+.liquid-glass {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.08) 48%,
+    rgba(255, 255, 255, 0.14) 100%
+  );
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  box-shadow:
+    0 24px 56px -14px rgba(2, 32, 26, 0.45),
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.6),
+    inset 0 -1px 2px rgba(255, 255, 255, 0.12);
+}
+
+.liquid-glass-dark {
+  background: linear-gradient(
+    135deg,
+    rgba(4, 34, 28, 0.62) 0%,
+    rgba(6, 48, 42, 0.45) 55%,
+    rgba(4, 38, 34, 0.58) 100%
+  );
+  backdrop-filter: blur(30px) saturate(180%);
+  -webkit-backdrop-filter: blur(30px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 24px 60px -12px rgba(1, 20, 16, 0.55),
+    inset 0 1px 1px rgba(255, 255, 255, 0.35),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.08);
+}
+
+.liquid-pill {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.28) 0%,
+    rgba(255, 255, 255, 0.12) 100%
+  );
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  box-shadow:
+    0 8px 24px -6px rgba(2, 32, 26, 0.32),
+    inset 0 1px 1px rgba(255, 255, 255, 0.72);
+}
+
+.liquid-btn-primary {
+  background: linear-gradient(135deg, #bef264 0%, #34d399 52%, #22d3ee 100%);
+  color: #022c22;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow:
+    0 14px 36px -6px rgba(52, 211, 153, 0.55),
+    0 0 24px rgba(163, 230, 53, 0.35),
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.85);
+}
+
+.liquid-btn-primary:hover {
+  filter: brightness(1.06);
+  box-shadow:
+    0 18px 42px -6px rgba(34, 211, 238, 0.6),
+    0 0 32px rgba(163, 230, 53, 0.45),
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.95);
+}
+
+.liquid-btn-secondary {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.24) 0%,
+    rgba(255, 255, 255, 0.1) 100%
+  );
+  backdrop-filter: blur(22px) saturate(190%);
+  -webkit-backdrop-filter: blur(22px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow:
+    0 12px 30px -8px rgba(2, 32, 26, 0.38),
+    inset 0 1.5px 1px rgba(255, 255, 255, 0.68);
+}
+
+.liquid-btn-secondary:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.34) 0%,
+    rgba(255, 255, 255, 0.16) 100%
+  );
+}
+
+/* Floating ambient liquid orbs */
+@keyframes floatSlow {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(24px, -28px, 0) scale(1.06);
+  }
+}
+
+@keyframes floatReverse {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-26px, 22px, 0) scale(0.95);
+  }
+}
+
+.animate-orb-slow {
+  animation: floatSlow 14s ease-in-out infinite;
+}
+
+.animate-orb-reverse {
+  animation: floatReverse 18s ease-in-out infinite;
+}
+
+/* 3D Perspective utilities */
+.perspective-1400 {
+  perspective: 1400px;
+}
+
+.preserve-3d {
+  transform-style: preserve-3d;
+}

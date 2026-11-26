@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.122:3000/api/v1';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://sigo-api-243815551696.southamerica-west1.run.app/api/v1';
 export const TOKEN_KEY = 'sigo_patrol_token';
 export const SESSION_KEY = 'sigo_patrol_session';
 

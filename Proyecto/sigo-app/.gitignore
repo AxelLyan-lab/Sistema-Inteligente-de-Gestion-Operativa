@@ -35,6 +35,10 @@ yarn-error.*
 # typescript
 *.tsbuildinfo
 
-# generated native folders
+# generated native folders (ios ignored; android native foreground service is versioned)
 /ios
-/android
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/.kotlin/
+/android/local.properties

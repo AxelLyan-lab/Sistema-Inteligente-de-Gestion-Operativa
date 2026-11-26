@@ -16,18 +16,15 @@ const colors  = {
   red:    '\x1b[31m',
 };
 
-// ── 1. Cargar .env ────────────────────────────────────────
+// ── 1. Cargar .env (si existe; en Docker/CI permite usar variables de entorno directas) ──
 const envPath = path.resolve(__dirname, '../.env');
 
-if (!fs.existsSync(envPath)) {
-  console.error(`${colors.red}[set-env] ERROR: No se encontró el archivo .env en:${colors.reset}`);
-  console.error(`  ${envPath}`);
-  console.error(`${colors.yellow}  → Copia .env.example como .env y completa tus credenciales.${colors.reset}`);
-  process.exit(1);
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+  console.log(`${colors.cyan}[set-env] Leyendo credenciales desde .env...${colors.reset}`);
+} else {
+  console.log(`${colors.yellow}[set-env] Archivo .env no encontrado; leyendo variables de entorno del sistema/CI...${colors.reset}`);
 }
-
-dotenv.config({ path: envPath });
-console.log(`${colors.cyan}[set-env] Leyendo credenciales desde .env...${colors.reset}`);
 
 // ── 2. Extraer variables con validación ───────────────────
 const isProd = process.argv.includes('--prod');
@@ -35,7 +32,10 @@ const isProd = process.argv.includes('--prod');
 const supabaseUrl     = process.env['SUPABASE_URL']     || 'YOUR_SUPABASE_URL';
 const supabaseKey     = process.env['SUPABASE_ANON_KEY'] || 'YOUR_SUPABASE_ANON_KEY';
 const mapsApiKey      = process.env['GOOGLE_MAPS_API_KEY'] || 'YOUR_GOOGLE_MAPS_API_KEY';
-const apiBaseUrl      = process.env['API_BASE_URL']     || 'http://localhost:3000/api';
+const rawApiBaseUrl   = process.env['API_BASE_URL']     || 'https://sigo-api-243815551696.southamerica-west1.run.app/api/v1';
+const apiBaseUrl      = (isProd && rawApiBaseUrl.includes('localhost'))
+  ? 'https://sigo-api-243815551696.southamerica-west1.run.app/api/v1'
+  : rawApiBaseUrl;
 const mqttBrokerUrl   = process.env['MQTT_BROKER_URL']  || 'wss://localhost:8084/mqtt';
 const mapLat          = parseFloat(process.env['MAP_DEFAULT_LAT'] || '-33.4569');
 const mapLng          = parseFloat(process.env['MAP_DEFAULT_LNG'] || '-70.6483');

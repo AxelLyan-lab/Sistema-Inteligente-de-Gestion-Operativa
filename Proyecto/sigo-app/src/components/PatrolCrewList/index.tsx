@@ -13,7 +13,7 @@ import {
 import { Spacing, BorderRadius, Fonts, ThemeColors } from '../../theme';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 import Icon, { IconName } from '../Icon';
-import { TripulacionMiembro } from '../../types';
+import { TripulacionMiembro, calcularUveMovil } from '../../types';
 import { addCrewMember, removeCrewMember } from '../../services/patrol.service';
 
 interface PatrolCrewListProps {
@@ -21,15 +21,27 @@ interface PatrolCrewListProps {
   conductorRut: string;
   conductorNombre: string;
   tipoTransporte: string;
+  identificadorUnidad?: string;
   onCrewChange: () => void;
+  onInputFocus?: () => void;
 }
 
 const getTransportIcon = (tipo: string): IconName => {
   switch (tipo) {
-    case 'MOTO': return 'moto';
-    case 'BICICLETA': return 'bici';
-    case 'INFANTERIA': return 'peaton';
-    default: return 'auto';
+    case 'FURGON_Z':
+    case 'FZ':
+      return 'furgon';
+    case 'MOTO':
+    case 'MTT':
+      return 'moto';
+    case 'BICICLETA':
+    case 'CB':
+      return 'bici';
+    case 'INFANTERIA':
+    case 'INF':
+      return 'peaton';
+    default:
+      return 'auto';
   }
 };
 
@@ -41,7 +53,9 @@ export default function PatrolCrewList({
   conductorRut,
   conductorNombre,
   tipoTransporte,
+  identificadorUnidad,
   onCrewChange,
+  onInputFocus,
 }: PatrolCrewListProps) {
   const { Colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -49,14 +63,31 @@ export default function PatrolCrewList({
   const [loadingAdd, setLoadingAdd] = useState(false);
   const [loadingRemove, setLoadingRemove] = useState<string | null>(null);
 
+  const esFurgonZ =
+    tipoTransporte === 'FURGON_Z' ||
+    tipoTransporte === 'FZ' ||
+    String(identificadorUnidad || '').toUpperCase().startsWith('FZ');
+  const permiteAcompanantes =
+    tipoTransporte === 'PATRULLA' ||
+    esFurgonZ ||
+    tipoTransporte === 'BICICLETA' ||
+    tipoTransporte === 'INFANTERIA';
+  const maxAcompanantes =
+    tipoTransporte === 'PATRULLA' || esFurgonZ ? 2 : permiteAcompanantes ? 1 : 0;
+
+  const uveActual = calcularUveMovil(tipoTransporte, crew.length, identificadorUnidad);
+
   const handleAddMember = async () => {
-    if (tipoTransporte !== 'PATRULLA') {
-      Alert.alert('Medio Individual', 'Moto, Bicicleta e Infantería operan con 1 solo funcionario (sin acompañantes).');
+    if (!permiteAcompanantes) {
+      Alert.alert('Medio Individual', 'Moto Todo Terreno (MTT) opera con 1 solo funcionario (0.45 U.V.E.).');
       return;
     }
 
-    if (crew.length >= 2) {
-      Alert.alert('Límite de Dotación', 'Radio Patrulla admite un máximo de 2 acompañantes (total 3 funcionarios en turno).');
+    if (crew.length >= maxAcompanantes) {
+      Alert.alert(
+        'Límite de Dotación',
+        `Este medio admite un máximo de ${maxAcompanantes} acompañante(s) (total ${maxAcompanantes + 1} funcionarios en turno).`
+      );
       return;
     }
 
@@ -89,6 +120,13 @@ export default function PatrolCrewList({
   };
 
   const handleRemoveMember = (rut: string, nombre?: string) => {
+    if (esFurgonZ && crew.length <= 1) {
+      Alert.alert(
+        'Dotación Mínima Furgón Z',
+        'El Furgón Z (FZ) exige un mínimo obligatorio de 2 tripulantes (Líder + 1 acompañante). No puedes dejar el vehículo con 1 solo efectivo.'
+      );
+      return;
+    }
     const label = nombre ?? rut;
     Alert.alert(
       'Desvincular Compañero',
@@ -129,9 +167,9 @@ export default function PatrolCrewList({
           <Icon name={getTransportIcon(tipoTransporte)} size={30} color={Colors.primary} />
         )}
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Dotación de turno</Text>
+          <Text style={styles.headerTitle}>Dotación de turno ({uveActual.tipoMedio})</Text>
           <Text style={styles.headerSub}>
-            Modo: {tipoTransporte.replace('_', ' ')} · {crew.length + 1} efectivo(s)
+            {uveActual.nombreMedio} · {crew.length + 1} efectivo(s) · {uveActual.valorUve.toFixed(2)} U.V.E.
           </Text>
         </View>
       </View>
@@ -197,21 +235,21 @@ export default function PatrolCrewList({
       )}
 
       {/* Agregar miembro en caliente */}
-      {tipoTransporte !== 'PATRULLA' ? (
+      {!permiteAcompanantes ? (
         <View style={[styles.emptyCard, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, marginTop: Spacing.sm }]}>
           <Text style={{ fontSize: Fonts.sizes.sm, color: Colors.textSecondary, lineHeight: 18 }}>
-            ℹ️ <Text style={{ fontWeight: '600' }}>Medio de transporte individual:</Text> Este móvil ({tipoTransporte.replace('_', ' ')}) opera con 1 solo funcionario (sin acompañantes).
+            ℹ️ <Text style={{ fontWeight: '600' }}>Medio individual:</Text> Moto Todo Terreno (MTT) opera con 1 funcionario (0.45 U.V.E.).
           </Text>
         </View>
-      ) : crew.length >= 2 ? (
+      ) : crew.length >= maxAcompanantes ? (
         <View style={[styles.emptyCard, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, marginTop: Spacing.sm }]}>
           <Text style={{ fontSize: Fonts.sizes.sm, color: Colors.warning, fontWeight: '600' }}>
-            ✓ Dotación completa: Radio Patrulla tiene asignados los 2 acompañantes permitidos.
+            ✓ Dotación completa ({crew.length + 1} funcionarios · {uveActual.valorUve.toFixed(2)} U.V.E.).
           </Text>
         </View>
       ) : (
         <View style={styles.addWrapper}>
-          <Text style={styles.addLabel}>Sumar compañero durante el turno ({crew.length}/2)</Text>
+          <Text style={styles.addLabel}>Sumar compañero durante el turno ({crew.length}/{maxAcompanantes})</Text>
           <View style={styles.addSection}>
             <TextInput
               style={styles.addInput}
@@ -219,6 +257,7 @@ export default function PatrolCrewList({
               placeholderTextColor={Colors.textMuted}
               value={addRut}
               onChangeText={setAddRut}
+              onFocus={() => onInputFocus?.()}
               autoCapitalize="none"
               returnKeyType="done"
               onSubmitEditing={() => Keyboard.dismiss()}

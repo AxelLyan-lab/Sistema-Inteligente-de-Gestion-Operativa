@@ -35,7 +35,7 @@ interface MensajeUsuarioFolder {
       <div class="px-5 py-2.5 bg-sigo-surface border-b border-sigo-border flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-2">
           <button
-            (click)="tabActivo.set('ACTIVO')"
+            (click)="cambiarTab('ACTIVO')"
             [class.bg-sigo-accent]="tabActivo() === 'ACTIVO'"
             [class.text-white]="tabActivo() === 'ACTIVO'"
             [class.bg-sigo-surface2]="tabActivo() !== 'ACTIVO'"
@@ -46,7 +46,7 @@ interface MensajeUsuarioFolder {
           </button>
 
           <button
-            (click)="tabActivo.set('HISTORIAL'); cargarHistorial()"
+            (click)="cambiarTab('HISTORIAL'); cargarHistorial()"
             [class.bg-sigo-accent]="tabActivo() === 'HISTORIAL'"
             [class.text-white]="tabActivo() === 'HISTORIAL'"
             [class.bg-sigo-surface2]="tabActivo() !== 'HISTORIAL'"
@@ -220,6 +220,7 @@ interface MensajeUsuarioFolder {
                 <input
                   type="text"
                   [(ngModel)]="nuevoTexto"
+                  (ngModelChange)="onDraftChange($event)"
                   name="texto"
                   placeholder="Escribe una orden o instrucción táctica a la patrulla..."
                   class="input-field text-xs py-2.5 flex-1"
@@ -372,6 +373,55 @@ export class MessagesComponent implements OnInit, OnDestroy {
   enviando = false;
   private pollTimer: any;
   private realtimeSub: any;
+  private readonly DRAFTS_STORAGE_KEY = 'sigo_operator_msg_drafts_v1';
+  private readonly SELECTED_SESION_KEY = 'sigo_operator_selected_sesion_v1';
+
+  private readDraftsMap(): Record<string, string> {
+    try {
+      const raw = localStorage.getItem(this.DRAFTS_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  }
+
+  private saveDraftForSession(idSesion: number | undefined | null, text: string): void {
+    if (idSesion == null) return;
+    try {
+      const map = this.readDraftsMap();
+      if (text && text.length > 0) {
+        map[String(idSesion)] = text;
+      } else {
+        delete map[String(idSesion)];
+      }
+      localStorage.setItem(this.DRAFTS_STORAGE_KEY, JSON.stringify(map));
+    } catch { }
+  }
+
+  private getDraftForSession(idSesion: number | undefined | null): string {
+    if (idSesion == null) return '';
+    const map = this.readDraftsMap();
+    return map[String(idSesion)] ?? '';
+  }
+
+  onDraftChange(value: string): void {
+    this.nuevoTexto = value ?? '';
+    const ses = this.selectedSesion();
+    if (ses) {
+      this.saveDraftForSession(ses.id_sesion, this.nuevoTexto);
+    }
+  }
+
+  cambiarTab(tab: 'ACTIVO' | 'HISTORIAL'): void {
+    const ses = this.selectedSesion();
+    if (ses) {
+      this.saveDraftForSession(ses.id_sesion, this.nuevoTexto);
+    }
+    this.tabActivo.set(tab);
+    if (tab === 'ACTIVO' && ses) {
+      this.nuevoTexto = this.getDraftForSession(ses.id_sesion);
+    }
+  }
 
   async ngOnInit(): Promise<void> {
     await this.cargarSesiones();
@@ -385,6 +435,10 @@ export class MessagesComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    const ses = this.selectedSesion();
+    if (ses) {
+      this.saveDraftForSession(ses.id_sesion, this.nuevoTexto);
+    }
     if (this.pollTimer) clearInterval(this.pollTimer);
     if (this.realtimeSub?.unsubscribe) this.realtimeSub.unsubscribe();
   }
@@ -393,7 +447,13 @@ export class MessagesComponent implements OnInit, OnDestroy {
     const data = await this.api.getSesionesActivas();
     this.sesiones.set(data);
     if (!this.selectedSesion() && data.length > 0) {
-      this.seleccionarSesion(data[0]);
+      let target = data[0];
+      try {
+        const savedId = Number(localStorage.getItem(this.SELECTED_SESION_KEY));
+        const found = data.find(s => s.id_sesion === savedId);
+        if (found) target = found;
+      } catch { }
+      this.seleccionarSesion(target);
     }
   }
 
@@ -403,7 +463,15 @@ export class MessagesComponent implements OnInit, OnDestroy {
   }
 
   async seleccionarSesion(s: SesionOperativa): Promise<void> {
+    const prev = this.selectedSesion();
+    if (prev && prev.id_sesion !== s.id_sesion) {
+      this.saveDraftForSession(prev.id_sesion, this.nuevoTexto);
+    }
     this.selectedSesion.set(s);
+    try {
+      localStorage.setItem(this.SELECTED_SESION_KEY, String(s.id_sesion));
+    } catch { }
+    this.nuevoTexto = this.getDraftForSession(s.id_sesion);
     await this.cargarMensajes(s.id_sesion);
   }
 
@@ -438,6 +506,7 @@ export class MessagesComponent implements OnInit, OnDestroy {
       const rutSupervisor = this.auth.currentUser()?.rut_usuario || '11111111-1';
       await this.api.enviarMensaje(ses.id_sesion, txt, rutSupervisor);
       this.nuevoTexto = '';
+      this.saveDraftForSession(ses.id_sesion, '');
       await this.cargarMensajes(ses.id_sesion);
     } catch (e: any) {
       alert('Error enviando mensaje: ' + (e.message || 'Error de conexión'));

@@ -8,8 +8,13 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  Platform,
+  PermissionsAndroid,
+  NativeModules,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getMessages, sendMessage, sendAudioMessage, MensajeChat } from '../services/patrol.service';
 import { playMessageSound } from '../services/sound.service';
 import {
@@ -26,6 +31,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { messageBadgeStore } from '../services/messageBadge.service';
 import Icon from '../components/Icon';
 
+const { SigoBackground } = NativeModules;
+
 interface Message {
   id: string;
   text: string;
@@ -41,11 +48,12 @@ export default function MessagesScreen() {
   const { funcionario } = useAuth();
   const { Colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const insets = useSafeAreaInsets();
 
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [sending, setSending] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<any>(null);
 
   // Estados para grabación y reproducción de notas de voz
   const [isRecording, setIsRecording] = useState(false);
@@ -55,13 +63,20 @@ export default function MessagesScreen() {
   const playerRef = useRef<any>(null);
 
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [containerHeight, setContainerHeight] = useState(0);
+  const fullHeightRef = useRef<number>(0);
 
-  const toUi = (m: MensajeChat): Message => ({
-    id: String(m.id_mensaje),
-    text: m.texto,
-    sent: m.remitente === 'FUNCIONARIO',
-    timestamp: new Date(m.fecha),
-  });
+  const toUi = (m: MensajeChat): Message => {
+    const raw = (m.fecha || '').trim();
+    const iso = /(Z|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : raw.replace(' ', 'T') + 'Z';
+    return {
+      id: String(m.id_mensaje),
+      text: m.texto,
+      sent: m.remitente === 'FUNCIONARIO',
+      timestamp: new Date(iso),
+    };
+  };
 
   const lastMsgIdRef = useRef<number | null>(null);
 
@@ -104,7 +119,22 @@ export default function MessagesScreen() {
   }, [messages.length]);
 
   useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      const kbH = e?.endCoordinates?.height ?? 280;
+      setKeyboardHeight(kbH);
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
     return () => {
+      showSub.remove();
+      hideSub.remove();
       if (recordTimerRef.current) clearInterval(recordTimerRef.current);
       try { playerRef.current?.remove(); } catch {}
     };
@@ -133,19 +163,46 @@ export default function MessagesScreen() {
   };
 
   // ── Grabación real de Notas de Voz ───────────────────────────────────────────
+  const usingNativeAudioRef = useRef(false);
+
+  const ensureMicPermission = async (): Promise<boolean> => {
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        {
+          title: 'Permiso de Micrófono SIGO',
+          message: 'SIGO necesita acceso al micrófono para grabar y enviar notas de voz tácticas a la central.',
+          buttonPositive: 'Permitir',
+          buttonNegative: 'Cancelar',
+        }
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    }
+    const perm = await requestRecordingPermissionsAsync();
+    return Boolean(perm?.granted);
+  };
+
   const startRecording = async () => {
     try {
-      const perm = await requestRecordingPermissionsAsync();
-      if (!perm.granted) {
+      const hasPerm = await ensureMicPermission();
+      if (!hasPerm) {
         Alert.alert('Micrófono', 'Debes permitir el acceso al micrófono para enviar notas de voz.');
         return;
       }
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      await recorder.prepareToRecordAsync();
-      recorder.record();
+
+      if (Platform.OS === 'android' && SigoBackground?.startAudioRecordingNative) {
+        await SigoBackground.startAudioRecordingNative();
+        usingNativeAudioRef.current = true;
+      } else {
+        usingNativeAudioRef.current = false;
+        await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+        await recorder.prepareToRecordAsync();
+        recorder.record();
+      }
 
       setIsRecording(true);
       setRecordSeconds(0);
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current);
       recordTimerRef.current = setInterval(() => {
         setRecordSeconds(s => s + 1);
       }, 1000);
@@ -158,8 +215,13 @@ export default function MessagesScreen() {
     if (recordTimerRef.current) clearInterval(recordTimerRef.current);
     setIsRecording(false);
     setRecordSeconds(0);
-    try { await recorder.stop(); } catch {}
-    try { await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }); } catch {}
+    if (usingNativeAudioRef.current && SigoBackground?.cancelAudioRecordingNative) {
+      try { await SigoBackground.cancelAudioRecordingNative(); } catch {}
+      usingNativeAudioRef.current = false;
+    } else {
+      try { await recorder.stop(); } catch {}
+      try { await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }); } catch {}
+    }
   };
 
   const stopAndSendRecording = async () => {
@@ -168,16 +230,28 @@ export default function MessagesScreen() {
 
     const tmpId = `tmp_audio_${Date.now()}`;
     let recordedUri: string | null = null;
+    let durationMs = recordSeconds * 1000;
 
-    try {
-      await recorder.stop();
-      recordedUri = recorder.uri ?? null;
-    } catch {}
-    try { await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }); } catch {}
+    if (usingNativeAudioRef.current && SigoBackground?.stopAudioRecordingNative) {
+      try {
+        const res = await SigoBackground.stopAudioRecordingNative();
+        recordedUri = res?.uri ?? null;
+        if (typeof res?.durationMillis === 'number') {
+          durationMs = res.durationMillis;
+        }
+      } catch {}
+      usingNativeAudioRef.current = false;
+    } else {
+      try {
+        await recorder.stop();
+        recordedUri = recorder.uri ?? null;
+      } catch {}
+      try { await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }); } catch {}
+    }
 
-    if (!recordedUri || recordSeconds < 1) {
+    if (!recordedUri || (durationMs < 600 && recordSeconds < 1)) {
       setRecordSeconds(0);
-      Alert.alert('Nota de voz', 'La grabación es demasiado corta. Mantén el micrófono activo al menos 1 segundo.');
+      Alert.alert('Nota de voz', 'La grabación es demasiado corta. Graba al menos 1 segundo antes de enviar.');
       return;
     }
 
@@ -207,6 +281,9 @@ export default function MessagesScreen() {
     // Detener reproducción actual
     try { playerRef.current?.remove(); } catch {}
     playerRef.current = null;
+    if (Platform.OS === 'android' && SigoBackground?.stopAudioPlayerNative) {
+      try { await SigoBackground.stopAudioPlayerNative(); } catch {}
+    }
 
     if (playingAudioId === msgId) {
       setPlayingAudioId(null);
@@ -220,6 +297,14 @@ export default function MessagesScreen() {
     }
 
     try {
+      if (Platform.OS === 'android' && SigoBackground?.playAudioUrlNative) {
+        setPlayingAudioId(msgId);
+        await SigoBackground.playAudioUrlNative(url);
+        setTimeout(() => {
+          setPlayingAudioId(prev => (prev === msgId ? null : prev));
+        }, 8000);
+        return;
+      }
       await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
       const player = createAudioPlayer({ uri: url });
       playerRef.current = player;
@@ -242,17 +327,42 @@ export default function MessagesScreen() {
     return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  return (
-    <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Central de supervisión</Text>
-        <View style={styles.onlineBadge}>
-          <View style={styles.onlineDot} />
-          <Text style={styles.onlineText}>EN LÍNEA</Text>
-        </View>
-      </View>
+  // En Android con edgeToEdgeEnabled=true, SafeAreaView (edges=['top']) llega hasta el borde físico inferior
+  // (detrás de la barra de navegación de 3 botones ~48dp), mientras que endCoordinates.height solo mide
+  // el teclado por encima de esa barra. Sumamos navBarOffset + 28dp para que la barra de escritura
+  // quede completamente visible por encima de la barra superior del teclado Samsung.
+  const navBarOffset = Math.max(insets.bottom, 48);
+  const keyboardBottomOffset =
+    keyboardHeight > 0 ? keyboardHeight + navBarOffset + 28 : 0;
 
-      <ScrollView ref={scrollRef} style={styles.chat} contentContainerStyle={styles.chatContent}>
+  return (
+    <SafeAreaView
+      style={styles.safe}
+      edges={['top']}
+      onLayout={(e) => {
+        const h = e.nativeEvent.layout.height;
+        setContainerHeight(h);
+        if (keyboardHeight === 0 && h > fullHeightRef.current) {
+          fullHeightRef.current = h;
+        }
+      }}
+    >
+      <View style={{ flex: 1, paddingBottom: keyboardBottomOffset }}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Central de supervisión</Text>
+          <View style={styles.onlineBadge}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.onlineText}>EN LÍNEA</Text>
+          </View>
+        </View>
+
+        <ScrollView
+          ref={scrollRef}
+          style={styles.chat}
+          contentContainerStyle={styles.chatContent}
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+        >
         {messages.length === 0 && (
           <Text style={styles.empty}>Canal abierto con la central. Envía un mensaje o nota de voz para comenzar.</Text>
         )}
@@ -332,6 +442,11 @@ export default function MessagesScreen() {
               placeholderTextColor={Colors.textMuted}
               value={message}
               onChangeText={setMessage}
+              onFocus={() => {
+                setTimeout(() => {
+                  scrollRef.current?.scrollToEnd({ animated: true });
+                }, 120);
+              }}
               multiline
               maxLength={500}
               editable={!sending}
@@ -365,6 +480,7 @@ export default function MessagesScreen() {
             )}
           </View>
         )}
+      </View>
       </View>
     </SafeAreaView>
   );
