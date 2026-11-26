@@ -70,7 +70,7 @@ export default function LoginScreen() {
   const [companionRut, setCompanionRut] = useState('');
   const [companions, setCompanions] = useState<CompanionItem[]>([]);
   const [validatingCompanion, setValidatingCompanion] = useState(false);
-  const [unitSuggestions, setUnitSuggestions] = useState<string[]>(DEFAULT_UNITS['PATRULLA']);
+  const [unitSuggestions, setUnitSuggestions] = useState<string[]>(DEFAULT_UNITS['PATRULLA'] ?? []);
 
   const [loading, setLoading] = useState(false);
   const shakeAnim = useRef(new Animated.Value(0)).current;
@@ -239,7 +239,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.backgroundDark} />
+      <StatusBar barStyle="light-content" {...({ backgroundColor: Colors.backgroundDark } as any)} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

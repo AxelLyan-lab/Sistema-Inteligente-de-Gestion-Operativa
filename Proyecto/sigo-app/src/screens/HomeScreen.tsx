@@ -13,6 +13,8 @@ import {
   Modal,
   AppState,
   AppStateStatus,
+  KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Icon, { IconName } from '../components/Icon';
@@ -33,7 +35,13 @@ import { requestReinforcements, getMessages, MensajeChat } from '../services/pat
 import apiClient from '../services/apiClient';
 import { getCrew, getActiveAssignment, markAssignmentArrived, AsignacionMision } from '../services/patrol.service';
 import { playSosSound, playMessageSound } from '../services/sound.service';
-import { useNavigation } from '@react-navigation/native';
+import {
+  notifySystemAlert,
+  startPatrolBackgroundService,
+  updatePatrolBackgroundLocation,
+} from '../services/background.service';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import SmoothModal from '../components/SmoothModal';
 import { useMessageBadge, messageBadgeStore } from '../services/messageBadge.service';
 import { Spacing, BorderRadius, Fonts, ThemeColors } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -71,7 +79,25 @@ export default function HomeScreen() {
   const { Colors, isDark } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const mapRef = useRef<MapView>(null);
+  const cardScrollRef = useRef<any>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const telemetryTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => {
+      setKeyboardVisible(true);
+      setTimeout(() => {
+        cardScrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardVisible(false);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // ── Estado GPS / GNSS ─────────────────────────────────────────────────────
   const [coords, setCoords] = useState<Coordenadas | null>(null);
@@ -96,6 +122,8 @@ export default function HomeScreen() {
   const [mission, setMission] = useState<AsignacionMision | null>(null);
   const missionRef = useRef<AsignacionMision | null>(null);
   const missionIdRef = useRef<string | null>(null);
+  const missionLimitMinRef = useRef<number>(15);
+  const missionHoraDespachoRef = useRef<string | null>(null);
   const coordsRef = useRef<Coordenadas | null>(null);
   useEffect(() => { coordsRef.current = coords; }, [coords]);
   useEffect(() => { missionRef.current = mission; }, [mission]);
@@ -109,6 +137,19 @@ export default function HomeScreen() {
   const localEstadoRef = useRef<string>('DISPONIBLE');
   useEffect(() => { localEstadoRef.current = localEstado; }, [localEstado]);
   const [zoneInside, setZoneInside] = useState<boolean | null>(null);
+  const [mapFocusTick, setMapFocusTick] = useState(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      setMapFocusTick(t => t + 1);
+      // Refrescar misión activa al volver a la pestaña Inicio para asegurar que la zona y el móvil estén visibles
+      getActiveAssignment()
+        .then((m: any) => {
+          if (m) setMission(m);
+        })
+        .catch(() => {});
+    }, [])
+  );
 
   const estadoBarra: EstadoBarra =
     dispatchCountdown !== null || localEstado === 'EN_CAMINO'
@@ -155,6 +196,12 @@ export default function HomeScreen() {
           setNotification(newNotif);
           setNotificationsList((prev) => [newNotif, ...prev]);
           setNotifBadgeCount((c) => c + 1);
+          playMessageSound();
+          notifySystemAlert(
+            'SIGO · Nueva Misión Asignada',
+            `Desplazamiento hacia ${m.nombre_zona ?? 'Sector asignado'}.`,
+            'MISION'
+          );
 
           if (m.centro_lat != null && m.centro_lng != null) {
             mapRef.current?.animateToRegion(
@@ -185,7 +232,9 @@ export default function HomeScreen() {
           } else {
             // Está fuera de la zona: estado EN_CAMINO con cronómetro de cuenta regresiva
             setLocalEstado('EN_CAMINO');
-            const limitMin = m.tiempo_limite_minutos || 15;
+            const limitMin = Number(m.tiempo_limite_minutos) || 15;
+            missionLimitMinRef.current = limitMin;
+            missionHoraDespachoRef.current = m.hora_despacho ?? null;
             const startMs = parseUtcIso(m.hora_despacho);
             const targetMs = startMs + limitMin * 60 * 1000;
 
@@ -199,6 +248,25 @@ export default function HomeScreen() {
             dispatchTimerRef.current = setInterval(updateCountdown, 1000);
           }
         } else {
+          // Si el operador actualizó el Tiempo Límite de Traslado (ETA) en Ajustes mientras la unidad va en camino
+          const newLimitMin = Number(m.tiempo_limite_minutos) || 15;
+          const newHoraDespacho = m.hora_despacho ?? null;
+          if (
+            (newLimitMin !== missionLimitMinRef.current || newHoraDespacho !== missionHoraDespachoRef.current) &&
+            localEstadoRef.current === 'EN_CAMINO'
+          ) {
+            missionLimitMinRef.current = newLimitMin;
+            missionHoraDespachoRef.current = newHoraDespacho;
+            const startMs = parseUtcIso(m.hora_despacho);
+            const targetMs = startMs + newLimitMin * 60 * 1000;
+            const updateCountdown = () => {
+              const rem = Math.round((targetMs - Date.now()) / 1000);
+              setDispatchCountdown(rem);
+            };
+            updateCountdown();
+            if (dispatchTimerRef.current) clearInterval(dispatchTimerRef.current);
+            dispatchTimerRef.current = setInterval(updateCountdown, 1000);
+          }
           // Asignación en curso: verificar si el servidor confirmó llegada o si la patrulla está dentro de la circunferencia
           const currentDist = coordsRef.current && m.centro_lat != null && m.centro_lng != null
             ? getDistance(coordsRef.current, { latitude: m.centro_lat, longitude: m.centro_lng })
@@ -229,6 +297,12 @@ export default function HomeScreen() {
               setNotification(arrivedNotif);
               setNotificationsList((prev) => [arrivedNotif, ...prev]);
               setNotifBadgeCount((c) => c + 1);
+              playMessageSound();
+              notifySystemAlert(
+                'SIGO · Arribo a Zona',
+                `Has arribado a ${m.nombre_zona ?? 'la zona'}. Patrullaje activo.`,
+                'INFO'
+              );
             }
           }
         }
@@ -251,6 +325,7 @@ export default function HomeScreen() {
       const newCoords: Coordenadas = { latitude: reading.latitude, longitude: reading.longitude };
       setCoords(newCoords);
       setIsLocating(false);
+      updatePatrolBackgroundLocation(reading.latitude, reading.longitude);
 
       // Verificación de circunferencia inmediata en cada ping de telemetría (cada 5s)
       const curMission = missionRef.current;
@@ -339,6 +414,7 @@ export default function HomeScreen() {
             setNotificationsList(prev => [msgNotif, ...prev]);
             setNotifBadgeCount(c => c + 1);
             messageBadgeStore.setUnread(true);
+            notifySystemAlert('SIGO · Mensaje de la Central', txt, 'MENSAJE');
           }
         }
       } catch {
@@ -375,6 +451,8 @@ export default function HomeScreen() {
           }
           return;
         }
+        await Location.requestBackgroundPermissionsAsync().catch(() => {});
+        startPatrolBackgroundService().catch(() => {});
 
         // 1. Última posición conocida (respuesta inmediata)
         const lastKnown = await Location.getLastKnownPositionAsync({}).catch(() => null);
@@ -422,6 +500,7 @@ export default function HomeScreen() {
             };
             setCoords(newCoords);
             setIsLocating(false);
+            updatePatrolBackgroundLocation(newCoords.latitude, newCoords.longitude);
 
             // Geofence check en tiempo real contra la circunferencia seleccionada si hay misión activa
             if (missionRef.current && missionRef.current.centro_lat != null && missionRef.current.centro_lng != null) {
@@ -469,6 +548,12 @@ export default function HomeScreen() {
                 setNotification(outNotif);
                 setNotificationsList((prev) => [outNotif, ...prev]);
                 setNotifBadgeCount((c) => c + 1);
+                playSosSound();
+                notifySystemAlert(
+                  'SIGO · Fuera de Perímetro',
+                  'Has salido de la circunferencia asignada, vuelve al perímetro de patrullaje.',
+                  'FUERA_ZONA'
+                );
               }
             }
           }
@@ -534,6 +619,12 @@ export default function HomeScreen() {
           };
           setNotificationsList(prev => [resolvedNotif, ...prev]);
           setNotifBadgeCount(c => c + 1);
+          playMessageSound();
+          notifySystemAlert(
+            'SIGO · Emergencia Resuelta',
+            'Emergencia resuelta por el operador de la central.',
+            'INFO'
+          );
           setTimeout(() => {
             if (alive) setSosResueltaReciente(false);
           }, 5000);
@@ -589,19 +680,44 @@ export default function HomeScreen() {
     sesion?.identificador_unidad
   );
 
-  // Banner de Geocerca ST_Contains / Zona de Riesgo activa (solo si tiene misión/patrullaje asignado)
-  const geofenceBannerZone: ZonaRiesgoActiva | null =
-    mission && localEstado !== 'DISPONIBLE'
-      ? (activeRiskZone ??
-        (localEstado === 'EN_ZONA'
-          ? {
-            id: String(mission.id_asignacion),
-            nombre: mission.nombre_zona ?? 'Zona Asignada',
-            nivel_riesgo: 'ALTO',
-            score_gravedad: 85,
-          }
-          : null))
-      : null;
+  // Evaluación en tiempo real de si la patrulla está dentro del polígono/perímetro de la zona asignada
+  const isInsideAssignedZone = Boolean(
+    mission &&
+      (zoneInside === true ||
+        localEstado === 'EN_ZONA' ||
+        (activeRiskZone &&
+          mission.nombre_zona &&
+          activeRiskZone.nombre.toLowerCase().includes(mission.nombre_zona.toLowerCase())))
+  );
+
+  const assignedRiskLevel: 'ALTO' | 'MEDIO' | 'BAJO' =
+    activeRiskZone?.nivel_riesgo ??
+    (mission?.instrucciones?.toUpperCase().includes('ALTO')
+      ? 'ALTO'
+      : mission?.instrucciones?.toUpperCase().includes('BAJO')
+        ? 'BAJO'
+        : 'MEDIO');
+
+  // Estado del Header de Patrulla (Badge de Alto Contraste)
+  const isDelayed = dispatchCountdown !== null && dispatchCountdown < 0;
+  const headerStatusText =
+    dispatchCountdown !== null && !isInsideAssignedZone && mission
+      ? dispatchCountdown >= 0
+        ? `En camino (${formatCountdown(dispatchCountdown)})`
+        : `En camino (Demora ${formatCountdown(dispatchCountdown)})`
+      : isInsideAssignedZone
+        ? 'En patrullaje activo'
+        : mission
+          ? 'En camino'
+          : getEstadoLabel(sesion?.estado_operativo ?? 'DISPONIBLE');
+
+  const headerStatusTheme = isDelayed
+    ? { bg: '#FEE2E2', border: '#EF4444', text: '#991B1B', dot: '#DC2626' }
+    : isInsideAssignedZone
+      ? { bg: '#DCFCE7', border: '#22C55E', text: '#14532D', dot: '#16A34A' }
+      : mission
+        ? { bg: '#FEF3C7', border: '#F59E0B', text: '#78350F', dot: '#D97706' }
+        : { bg: '#DBEAFE', border: '#3B82F6', text: '#1E3A8A', dot: '#2563EB' };
 
   // ── Región inicial del mapa ───────────────────────────────────────────────
   const activeCenter = geofenceCenter ?? coords ?? DEFAULT_COORDS;
@@ -633,13 +749,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={Colors.background} />
-
-      {/* ── Banner táctica ────────────────────────────────────────── */}
-      <NotificationBanner
-        notification={notification}
-        onDismiss={() => setNotification(null)}
-      />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} {...({ backgroundColor: Colors.background } as any)} />
 
       {/* ── Header Fijo con Badge U.V.E. ──────────────────────────── */}
       <View style={styles.topBar}>
@@ -659,17 +769,20 @@ export default function HomeScreen() {
             </View>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-            <Text style={styles.statusLabel}>
-              {dispatchCountdown !== null && localEstado === 'EN_CAMINO'
-                ? (dispatchCountdown >= 0
-                  ? `En camino (${formatCountdown(dispatchCountdown)})`
-                  : `En camino (Demora ${formatCountdown(dispatchCountdown)})`)
-                : localEstado === 'EN_ZONA' || geofenceBannerZone
-                  ? 'En Zona de Riesgo'
-                  : localEstado === 'EN_CAMINO'
-                    ? 'En camino'
-                    : getEstadoLabel(sesion?.estado_operativo ?? 'DISPONIBLE')}
-            </Text>
+            <View
+              style={[
+                styles.statusBadgePill,
+                {
+                  backgroundColor: headerStatusTheme.bg,
+                  borderColor: headerStatusTheme.border,
+                },
+              ]}
+            >
+              <View style={[styles.statusBadgeDot, { backgroundColor: headerStatusTheme.dot }]} />
+              <Text style={[styles.statusBadgeText, { color: headerStatusTheme.text }]}>
+                {headerStatusText}
+              </Text>
+            </View>
             <View style={styles.uveHeaderBadge}>
               <Text style={styles.uveHeaderBadgeText}>
                 Carga Operativa: {uveCalculada.valorUve.toFixed(2)} U.V.E.
@@ -694,27 +807,43 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* ── Alerta de Geofencing (ST_Contains) ────────────────────── */}
-      {geofenceBannerZone && (
-        <View
-          style={[
-            styles.geofenceAlertBanner,
-            geofenceBannerZone.nivel_riesgo === 'ALTO'
-              ? styles.geofenceBannerAlto
-              : geofenceBannerZone.nivel_riesgo === 'MEDIO'
-                ? styles.geofenceBannerMedio
-                : styles.geofenceBannerBajo,
-          ]}
-        >
-          <Icon name="escudo" size={16} color="#FFFFFF" />
-          <Text style={styles.geofenceAlertText}>
-            En patrullaje de Zona de Riesgo: {geofenceBannerZone.nombre} ({geofenceBannerZone.nivel_riesgo})
+      {/* ── Banner Dinámico de Zona de Riesgo y Rotación ──────────── */}
+      {mission ? (
+        isInsideAssignedZone ? (
+          <View
+            style={[
+              styles.geofenceAlertBanner,
+              assignedRiskLevel === 'ALTO'
+                ? styles.geofenceBannerAlto
+                : assignedRiskLevel === 'MEDIO'
+                  ? styles.geofenceBannerMedio
+                  : styles.geofenceBannerBajo,
+            ]}
+          >
+            <Icon name="escudo" size={16} color="#FFFFFF" />
+            <Text style={styles.geofenceAlertText}>
+              En patrullaje activo: {mission.nombre_zona ?? 'Zona Asignada'} ({assignedRiskLevel})
+            </Text>
+          </View>
+        ) : (
+          <View style={[styles.geofenceAlertBanner, styles.geofenceBannerEnCamino]}>
+            <Icon name="mira" size={16} color="#FFFFFF" />
+            <Text style={styles.geofenceAlertText}>
+              Dirígete a: {mission.nombre_zona ?? 'Zona Asignada'}
+            </Text>
+          </View>
+        )
+      ) : (
+        <View style={[styles.geofenceAlertBanner, styles.geofenceBannerEspera]}>
+          <Icon name="reloj" size={15} color={Colors.textSecondary} />
+          <Text style={[styles.geofenceAlertText, { color: Colors.textSecondary }]}>
+            Sin zona de riesgo asignada — En espera de rotación
           </Text>
         </View>
       )}
 
       {/* ── Mapa + Panel GNSS ─────────────────────────────────────── */}
-      <View style={styles.mapContainer}>
+      <View style={[styles.mapContainer, keyboardVisible && { height: Math.round(MAP_HEIGHT * 0.42) }]}>
         <MapView
           ref={mapRef}
           style={styles.map}
@@ -734,6 +863,7 @@ export default function HomeScreen() {
             <>
               {/* Circunferencia de patrullaje (límite entre estar en zona o fuera de zona) */}
               <Circle
+                key={`circle-outer-${mission.id_asignacion}-${mapFocusTick}`}
                 center={{ latitude: mission.centro_lat, longitude: mission.centro_lng }}
                 radius={Math.max(20, Number(mission.radio_m) || 160)}
                 strokeColor={zoneInside ? '#16A34A' : '#DC2626'}
@@ -742,6 +872,7 @@ export default function HomeScreen() {
               />
               {/* Núcleo focal del punto de riesgo */}
               <Circle
+                key={`circle-core-${mission.id_asignacion}-${mapFocusTick}`}
                 center={{ latitude: mission.centro_lat, longitude: mission.centro_lng }}
                 radius={Math.min(35, Math.max(12, Math.round((Number(mission.radio_m) || 160) * 0.25)))}
                 strokeColor={zoneInside ? '#16A34A' : '#DC2626'}
@@ -749,6 +880,7 @@ export default function HomeScreen() {
                 strokeWidth={2}
               />
               <Marker
+                key={`dest-marker-${mission.id_asignacion}-${mapFocusTick}`}
                 coordinate={{ latitude: mission.centro_lat, longitude: mission.centro_lng }}
                 title={`🎯 Zona: ${mission.nombre_zona ?? 'Sector Asignado'} (Radio ${Math.max(20, Number(mission.radio_m) || 160)}m)`}
                 description={mission.instrucciones ?? 'Circunferencia de patrullaje preventivo'}
@@ -759,10 +891,12 @@ export default function HomeScreen() {
           {/* Marcador táctico del funcionario */}
           {coords && (
             <Marker
+              key={`unit-marker-${mapFocusTick}`}
               coordinate={coords}
               title={funcionario?.nombre_completo ?? 'Mi Ubicación'}
               description={`Móvil: ${sesion?.identificador_unidad ?? ''}`}
               anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={true}
               zIndex={3}
             >
               <>
@@ -797,66 +931,79 @@ export default function HomeScreen() {
         <GnssStatusPanel estado={estadoBarra} />
       </View>
 
-      {/* ── Tarjeta inferior ──────────────────────────────────────── */}
-      <ScrollView
-        style={styles.card}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+      {/* ── Tarjeta inferior con KeyboardAvoidingView ─────────────── */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 24}
       >
-        {/* Perfil del funcionario */}
-        <View style={styles.profileSection}>
-          <Text style={styles.officerName}>
-            {funcionario?.nombre_completo ?? 'Funcionario'}
-          </Text>
-          <Text style={styles.officerSub}>
-            {funcionario?.grado_cargo ?? 'Oficial en Terreno'} — {sesion?.identificador_unidad ?? 'Móvil'}
-          </Text>
-        </View>
-
-        {/* Botón SOS */}
-        <TouchableOpacity
-          style={[styles.sosBtn, sosActivoEnCurso && styles.sosBtnConfirmed]}
-          onPress={() => setShowSosModal(true)}
-          disabled={sosActivoEnCurso}
-          activeOpacity={0.85}
+        <ScrollView
+          ref={cardScrollRef}
+          style={styles.card}
+          contentContainerStyle={{ paddingBottom: keyboardVisible ? 150 : Spacing.xxl }}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <Icon name="alerta" size={18} color={Colors.danger} />
-          <Text style={styles.sosBtnText}>
-            {sosActivoEnCurso ? '🚨 SOS Activo' : 'Pedir Refuerzos'}
-          </Text>
-        </TouchableOpacity>
-
-        {/* Texto pequeño y notorio de estado de emergencia */}
-        {(sosActivoEnCurso || sosResueltaReciente) && (
-          <View
-            style={[
-              styles.sosStatusPill,
-              sosResueltaReciente
-                ? { backgroundColor: '#16A34A20', borderColor: '#16A34A' }
-                : { backgroundColor: '#DC262620', borderColor: '#DC2626' },
-            ]}
-          >
-            <Text
-              style={[
-                styles.sosStatusPillText,
-                { color: sosResueltaReciente ? '#16A34A' : '#DC2626' },
-              ]}
-            >
-              {sosResueltaReciente ? '✅ Emergencia resuelta' : '🚨 Atendiendo emergencia'}
+          {/* Perfil del funcionario */}
+          <View style={styles.profileSection}>
+            <Text style={styles.officerName}>
+              {funcionario?.nombre_completo ?? 'Funcionario'}
+            </Text>
+            <Text style={styles.officerSub}>
+              {funcionario?.grado_cargo ?? 'Oficial en Terreno'} — {sesion?.identificador_unidad ?? 'Móvil'}
             </Text>
           </View>
-        )}
 
-        {/* Dotación de turno */}
-        <PatrolCrewList
-          crew={crew}
-          conductorRut={funcionario?.rut ?? ''}
-          conductorNombre={funcionario?.nombre_completo ?? ''}
-          tipoTransporte={sesion?.tipo_transporte ?? 'PATRULLA'}
-          identificadorUnidad={sesion?.identificador_unidad}
-          onCrewChange={loadCrew}
-        />
-      </ScrollView>
+          {/* Botón SOS */}
+          <TouchableOpacity
+            style={[styles.sosBtn, sosActivoEnCurso && styles.sosBtnConfirmed]}
+            onPress={() => setShowSosModal(true)}
+            disabled={sosActivoEnCurso}
+            activeOpacity={0.85}
+          >
+            <Icon name="alerta" size={18} color={Colors.danger} />
+            <Text style={styles.sosBtnText}>
+              {sosActivoEnCurso ? '🚨 SOS Activo' : 'Pedir Refuerzos'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Texto pequeño y notorio de estado de emergencia */}
+          {(sosActivoEnCurso || sosResueltaReciente) && (
+            <View
+              style={[
+                styles.sosStatusPill,
+                sosResueltaReciente
+                  ? { backgroundColor: '#16A34A20', borderColor: '#16A34A' }
+                  : { backgroundColor: '#DC262620', borderColor: '#DC2626' },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.sosStatusPillText,
+                  { color: sosResueltaReciente ? '#16A34A' : '#DC2626' },
+                ]}
+              >
+                {sosResueltaReciente ? '✅ Emergencia resuelta' : '🚨 Atendiendo emergencia'}
+              </Text>
+            </View>
+          )}
+
+          {/* Dotación de turno */}
+          <PatrolCrewList
+            crew={crew}
+            conductorRut={funcionario?.rut ?? ''}
+            conductorNombre={funcionario?.nombre_completo ?? ''}
+            tipoTransporte={sesion?.tipo_transporte ?? 'PATRULLA'}
+            identificadorUnidad={sesion?.identificador_unidad}
+            onCrewChange={loadCrew}
+            onInputFocus={() => {
+              setTimeout(() => {
+                cardScrollRef.current?.scrollToEnd({ animated: true });
+              }, 150);
+            }}
+          />
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Modal SOS / Refuerzo U.V.E. */}
       <EmergencyConfirmModal
@@ -873,14 +1020,11 @@ export default function HomeScreen() {
       />
 
       {/* Modal Centro de Notificaciones */}
-      <Modal
+      <SmoothModal
         visible={showNotifModal}
-        transparent
-        animationType="fade"
         onRequestClose={() => setShowNotifModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.notifModalCard}>
+        <View style={styles.notifModalCard}>
             <View style={styles.notifModalHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Icon name="campana" size={20} color={Colors.primary} />
@@ -935,8 +1079,7 @@ export default function HomeScreen() {
               <Text style={styles.closeNotifBtnText}>Cerrar</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </Modal>
+      </SmoothModal>
     </SafeAreaView>
   );
 }
@@ -1013,6 +1156,25 @@ const makeStyles = (Colors: ThemeColors) => StyleSheet.create({
     color: Colors.primary,
   },
   statusLabel: { fontSize: Fonts.sizes.xs, color: Colors.textSecondary, marginTop: 2 },
+  statusBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  statusBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusBadgeText: {
+    fontSize: Fonts.sizes.xs,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
   topActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   uveHeaderBadge: {
     backgroundColor: Colors.primary,
@@ -1041,6 +1203,15 @@ const makeStyles = (Colors: ThemeColors) => StyleSheet.create({
   },
   geofenceBannerBajo: {
     backgroundColor: '#16a34a',
+  },
+  geofenceBannerEnCamino: {
+    backgroundColor: '#1d4ed8',
+  },
+  geofenceBannerEspera: {
+    backgroundColor: Colors.surface,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: Colors.border,
   },
   geofenceAlertText: {
     flex: 1,
@@ -1308,16 +1479,20 @@ const makeStyles = (Colors: ThemeColors) => StyleSheet.create({
   },
   closeNotifBtn: {
     marginTop: Spacing.md,
-    paddingVertical: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    paddingVertical: 13,
+    backgroundColor: Colors.primary,
     borderRadius: BorderRadius.md,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
   },
   closeNotifBtnText: {
     fontSize: Fonts.sizes.sm,
-    fontWeight: '600',
-    color: Colors.textPrimary,
+    fontWeight: '700',
+    color: Colors.onPrimary,
+    letterSpacing: 0.3,
   },
 });

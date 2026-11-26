@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Modal,
   View,
   Text,
   StyleSheet,
@@ -8,6 +7,7 @@ import {
   Animated,
   Dimensions,
 } from 'react-native';
+import SmoothModal from '../SmoothModal';
 import { BorderRadius, Fonts, Spacing, ThemeColors } from '../../theme';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 import Icon from '../Icon';
@@ -69,9 +69,8 @@ export default function EmergencyConfirmModal({
   }, [visible, confirmed]);
 
   return (
-    <Modal transparent animationType="fade" visible={visible} onRequestClose={onCancel}>
-      <View style={styles.overlay}>
-        <Animated.View style={[styles.card, { transform: [{ scale: pulseAnim }] }]}>
+    <SmoothModal visible={visible} onRequestClose={onCancel}>
+      <Animated.View style={[styles.card, { transform: [{ scale: pulseAnim }] }]}>
           <View style={styles.iconContainer}>
             <Icon name={confirmed ? 'check' : 'alerta'} size={34} color={Colors.danger} />
           </View>
@@ -131,8 +130,7 @@ export default function EmergencyConfirmModal({
             </>
           )}
         </Animated.View>
-      </View>
-    </Modal>
+    </SmoothModal>
   );
 }
 

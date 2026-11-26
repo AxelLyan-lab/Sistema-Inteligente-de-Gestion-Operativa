@@ -20,7 +20,9 @@ import {
   getRisk,
   CRIME_PRESETS,
   MapService,
+  HOTSPOT_ZONES,
 } from '../../core/services/map.service';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-zones',
@@ -558,9 +560,22 @@ export class ZonesComponent implements OnInit, OnDestroy {
   async ngOnInit(): Promise<void> {
     await this.cargar();
     this.sesiones = await this.api.getSesionesActivas();
-    // Mantener el estado ASIGNADA / LIBRE sincronizado en tiempo real con el ciclo del Dashboard
-    this.cycleSyncTimer = setInterval(() => {
-      this.mapService.syncCycleState();
+    // Mantener el estado ASIGNADA / LIBRE sincronizado en tiempo real con el Motor Táctico 24/7 del servidor
+    this.cycleSyncTimer = setInterval(async () => {
+      try {
+        const res = await fetch(`${environment.apiBaseUrl}/tactico/estado`);
+        if (res.ok) {
+          const data = await res.json();
+          this.mapService.applyServerCycleState(
+            data.modo_despacho || 'MANUAL',
+            Array.isArray(data.zonas_activas_ids) ? data.zonas_activas_ids : [],
+            Number(data.segundos_restantes) || 0,
+            Array.isArray(data.zonas_catalogo) ? data.zonas_catalogo : undefined
+          );
+        }
+      } catch {
+        this.mapService.syncCycleState();
+      }
       this.sincronizarEstadoConDashboard();
     }, 1000);
   }

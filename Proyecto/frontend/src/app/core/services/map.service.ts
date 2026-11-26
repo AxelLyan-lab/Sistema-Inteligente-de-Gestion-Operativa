@@ -363,9 +363,9 @@ export class MapService {
   private patrolZoneCircles = new Map<number, google.maps.Circle>();
   private patrolZoneMarkers = new Map<number, any>();
   private patrolInfoWindow: any = null;
-  private hotspotCircles: google.maps.Circle[] = [];
-  private hotspotPolygons: google.maps.Polygon[] = [];
-  private zoneMarkers: any[] = [];
+  private hotspotCircles = new Map<number, { perimeter: google.maps.Circle; core: google.maps.Circle; sig: string }>();
+  private hotspotPolygons = new Map<number, google.maps.Polygon>();
+  private zoneMarkers = new Map<number, any>();
   private infoWindow: any = null;
   private heatOverlay = new HeatmapCanvasOverlay();
   private lastRenderTime = new Map<string, number>();
@@ -391,6 +391,7 @@ export class MapService {
     })()
   );
   readonly zones = HOTSPOT_ZONES;
+  readonly catalogZonesSignal = signal<HotspotZone[]>([...HOTSPOT_ZONES]);
   readonly activeZones = signal<HotspotZone[]>([]);
 
   private countdownTimer: any = null;
@@ -455,10 +456,12 @@ export class MapService {
     this.patrolZoneCircles.clear();
     this.patrolZoneMarkers.forEach(m => { if (typeof m.setMap === 'function') m.setMap(null); });
     this.patrolZoneMarkers.clear();
-    this.hotspotCircles.forEach(c => c.setMap(null));
-    this.hotspotCircles = [];
+    this.hotspotCircles.forEach(({ perimeter, core }) => { perimeter.setMap(null); core.setMap(null); });
+    this.hotspotCircles.clear();
+    this.hotspotPolygons.forEach(p => p.setMap(null));
+    this.hotspotPolygons.clear();
     this.zoneMarkers.forEach(m => { if (typeof m.setMap === 'function') m.setMap(null); });
-    this.zoneMarkers = [];
+    this.zoneMarkers.clear();
     this.lastRenderTime.clear();
 
     // IMPORTANTE: sin `mapId`. Con mapId Google ignora la opción `styles` y el modo plano no funciona.
@@ -492,11 +495,23 @@ export class MapService {
     this.mapLoaded.set(true);
 
     this.initZoneMarkers();
-    this.syncCycleState();
+    if (!this.autoRotationEnabled() || this.serverCycleDriven) {
+      this.syncCycleState();
+    }
+
+    // Restaurar círculos de contorno y mapa de calor de las zonas activas al volver de otra pestaña
+    const currentActive = this.activeZones();
+    if (currentActive.length > 0) {
+      this.heatOverlay.setActiveZones(currentActive);
+      this.updateHotspotCircles(currentActive);
+      this.updateZoneMarkersState(new Set<number>(currentActive.map(z => z.id)));
+    }
 
     if (this.countdownTimer) clearInterval(this.countdownTimer);
     this.countdownTimer = setInterval(() => {
-      this.syncCycleState();
+      if (!this.autoRotationEnabled()) {
+        this.syncCycleState();
+      }
     }, 1000);
   }
 
@@ -579,21 +594,51 @@ export class MapService {
 
   private initZoneMarkers(): void {
     if (!this._AdvancedMarker) return;
-    this.zoneMarkers.forEach(m => {
-      if (typeof m.setMap === 'function') m.setMap(null);
-    });
-    this.zoneMarkers = [];
-    this.infoWindow = new (google.maps as any).InfoWindow({
-      disableAutoPan: false,
-      pixelOffset: new google.maps.Size(0, -32),
-    });
+    if (!this.infoWindow) {
+      this.infoWindow = new (google.maps as any).InfoWindow({
+        disableAutoPan: false,
+        pixelOffset: new google.maps.Size(0, -32),
+      });
+    }
 
     const visible = this.layerPolygons();
+    const validIds = new Set<number>(HOTSPOT_ZONES.map(z => z.id));
 
+    // Eliminar únicamente marcadores de zonas que ya no existen en el catálogo
+    for (const [id, marker] of this.zoneMarkers.entries()) {
+      if (!validIds.has(id)) {
+        if (typeof marker.setMap === 'function') marker.setMap(null);
+        this.zoneMarkers.delete(id);
+      }
+    }
+
+    // Actualizar en sitio o crear únicamente si es una zona nueva
     for (const zone of HOTSPOT_ZONES) {
+      const isActive = this.currentActiveIds.has(zone.id);
+      const sig = `${zone.name}|${zone.scoreGravedad}|${zone.crimeCount}|${isActive}`;
+      const existing = this.zoneMarkers.get(zone.id);
+
+      if (existing) {
+        const pos = new google.maps.LatLng(zone.lat, zone.lng);
+        const curPos = (existing as any).position;
+        if (!curPos || Math.abs(curPos.lat() - zone.lat) > 0.000001 || Math.abs(curPos.lng() - zone.lng) > 0.000001) {
+          (existing as any).position = pos;
+        }
+        const targetMap = visible ? this.map : null;
+        if (typeof existing.getMap === 'function' && existing.getMap() !== targetMap) {
+          existing.setMap(targetMap);
+        }
+        if ((existing as any).__sig !== sig) {
+          (existing as any).__sig = sig;
+          const wrapper = (existing as any).__wrapper as HTMLElement;
+          if (wrapper) wrapper.innerHTML = this.buildZoneMarkerInner(zone, isActive);
+        }
+        continue;
+      }
+
       const wrapper = document.createElement('div');
       wrapper.style.cursor = 'pointer';
-      wrapper.innerHTML = this.buildZoneMarkerInner(zone, false);
+      wrapper.innerHTML = this.buildZoneMarkerInner(zone, isActive);
 
       const marker = new this._AdvancedMarker({
         map: visible ? this.map : null,
@@ -603,14 +648,16 @@ export class MapService {
       });
 
       marker.addListener('click', () => {
-        this.infoWindow.setContent(this.buildInfoWindowContent(zone));
-        this.infoWindow.setPosition(new google.maps.LatLng(zone.lat, zone.lng));
+        const latest = HOTSPOT_ZONES.find(z => z.id === zone.id) ?? zone;
+        this.infoWindow.setContent(this.buildInfoWindowContent(latest));
+        this.infoWindow.setPosition(new google.maps.LatLng(latest.lat, latest.lng));
         this.infoWindow.open(this.map);
       });
 
       (marker as any).__zoneId = zone.id;
       (marker as any).__wrapper = wrapper;
-      this.zoneMarkers.push(marker);
+      (marker as any).__sig = sig;
+      this.zoneMarkers.set(zone.id, marker);
     }
   }
 
@@ -661,40 +708,68 @@ export class MapService {
   }
 
   private updateZoneMarkersState(activeIds: Set<number>): void {
-    for (const marker of this.zoneMarkers) {
-      const id = (marker as any).__zoneId as number;
+    for (const [id, marker] of this.zoneMarkers.entries()) {
       const zone = HOTSPOT_ZONES.find(z => z.id === id);
       if (!zone) continue;
-      const wrapper = (marker as any).__wrapper as HTMLElement;
-      if (wrapper) wrapper.innerHTML = this.buildZoneMarkerInner(zone, activeIds.has(id));
+      const isActive = activeIds.has(id);
+      const sig = `${zone.name}|${zone.scoreGravedad}|${zone.crimeCount}|${isActive}`;
+      if ((marker as any).__sig !== sig) {
+        (marker as any).__sig = sig;
+        const wrapper = (marker as any).__wrapper as HTMLElement;
+        if (wrapper) wrapper.innerHTML = this.buildZoneMarkerInner(zone, isActive);
+      }
     }
   }
 
   /**
-   * Dibuja las circunferencias de patrullaje activas según el radio configurado para cada zona
-   * (límite exacto entre estar en zona o fuera de zona).
+   * Dibuja o actualiza en sitio las circunferencias de patrullaje activas según el radio configurado para cada zona
+   * sin destruir ni recrear los círculos que siguen activos.
    */
   private updateHotspotCircles(activeZones: HotspotZone[]): void {
     if (!this.map) return;
-    this.hotspotCircles.forEach(c => c.setMap(null));
-    this.hotspotCircles = [];
-    this.hotspotPolygons.forEach(p => p.setMap(null));
-    this.hotspotPolygons = [];
 
     const visible = this.layerPolygons();
+    const activeIds = new Set<number>(activeZones.map(z => z.id));
+
+    // Ocultar/eliminar únicamente los círculos de zonas que dejaron de estar activas
+    for (const [id, entry] of this.hotspotCircles.entries()) {
+      if (!activeIds.has(id)) {
+        entry.perimeter.setMap(null);
+        entry.core.setMap(null);
+        this.hotspotCircles.delete(id);
+      }
+    }
 
     for (const z of activeZones) {
       const risk = getRisk(z.crimeCount, z.scoreGravedad);
       const radioCircunferencia = Math.max(20, Number(z.radio_m) || 160);
       const radioNucleo = Math.min(40, Math.max(15, Math.round(radioCircunferencia * 0.28)));
+      const sig = `${z.lat}|${z.lng}|${radioCircunferencia}|${risk.color}`;
+
+      const existing = this.hotspotCircles.get(z.id);
+      if (existing) {
+        const targetMap = visible ? this.map : null;
+        if (existing.perimeter.getMap() !== targetMap) existing.perimeter.setMap(targetMap);
+        if (existing.core.getMap() !== targetMap) existing.core.setMap(targetMap);
+        if (existing.sig !== sig) {
+          existing.sig = sig;
+          existing.perimeter.setCenter({ lat: z.lat, lng: z.lng });
+          existing.perimeter.setRadius(radioCircunferencia);
+          existing.perimeter.setOptions({ fillColor: risk.color, strokeColor: risk.color });
+          existing.core.setCenter({ lat: z.lat, lng: z.lng });
+          existing.core.setRadius(radioNucleo);
+          existing.core.setOptions({ fillColor: risk.color, strokeColor: risk.color });
+        }
+        continue;
+      }
 
       const showInfo = () => {
-        this.infoWindow?.setContent(this.buildInfoWindowContent(z));
-        this.infoWindow?.setPosition(new google.maps.LatLng(z.lat, z.lng));
+        const latest = HOTSPOT_ZONES.find(hz => hz.id === z.id) ?? z;
+        this.infoWindow?.setContent(this.buildInfoWindowContent(latest));
+        this.infoWindow?.setPosition(new google.maps.LatLng(latest.lat, latest.lng));
         this.infoWindow?.open(this.map);
       };
 
-      // Circunferencia exterior de patrullaje (límite de geocerca: en zona vs fuera de zona)
       const perimeterCircle = new google.maps.Circle({
         map: visible ? this.map : null,
         center: { lat: z.lat, lng: z.lng },
@@ -707,9 +782,7 @@ export class MapService {
         clickable: true,
       });
       perimeterCircle.addListener('click', showInfo);
-      this.hotspotCircles.push(perimeterCircle);
 
-      // Núcleo focal del punto de calor con color más vibrante
       const coreCircle = new google.maps.Circle({
         map: visible ? this.map : null,
         center: { lat: z.lat, lng: z.lng },
@@ -722,7 +795,8 @@ export class MapService {
         clickable: true,
       });
       coreCircle.addListener('click', showInfo);
-      this.hotspotCircles.push(coreCircle);
+
+      this.hotspotCircles.set(z.id, { perimeter: perimeterCircle, core: coreCircle, sig });
     }
   }
 
@@ -761,8 +835,105 @@ export class MapService {
   }
 
   private lastCycleIndex = -1;
+  private serverCycleDriven = false;
+  private serverActiveZoneIds: number[] = [];
+
+  /**
+   * Sincroniza las zonas activas y el temporizador contrarreloj desde el Motor Táctico 24/7 del servidor,
+   * garantizando que todos los operadores y dispositivos vean exactamente las mismas zonas y cuenta regresiva.
+   */
+  public applyServerCycleState(
+    modo: 'MANUAL' | 'AUTO' | 'OPTIMIZADO',
+    zonasActivasIds: number[],
+    segundosRestantes: number,
+    zonasCatalogo?: any[]
+  ): void {
+    this.serverCycleDriven = true;
+    this.autoRotationEnabled.set(modo !== 'MANUAL');
+    this.cycleCountdown.set(modo === 'MANUAL' ? 0 : segundosRestantes);
+    this.serverActiveZoneIds = Array.isArray(zonasActivasIds) ? zonasActivasIds : [];
+
+    // Sincronizar el catálogo global de zonas (nombres, coordenadas, radios y scores de gravedad) desde el servidor
+    let catalogChanged = false;
+    if (Array.isArray(zonasCatalogo) && zonasCatalogo.length > 0) {
+      const mappedCatalog: HotspotZone[] = zonasCatalogo.map(sz => {
+        const score = Number(sz.scoreGravedad ?? sz.score_gravedad ?? 45);
+        const clasif = clasificarZonaPorScore(score);
+        const crimes = score > 80 ? 9 : score >= 40 ? 6 : 2;
+        return {
+          id: Number(sz.id),
+          name: String(sz.name || `Z${sz.id}`),
+          address: String(sz.address || 'Sector Operativo'),
+          lat: Number(sz.lat),
+          lng: Number(sz.lng),
+          radio_m: Math.max(20, Number(sz.radio_m) || 160),
+          crimeCount: crimes,
+          scoreGravedad: score,
+          score_gravedad: score,
+          nivelRiesgo: clasif.nivelRiesgo,
+          uveObjetivoMin: clasif.uveObjetivoMin,
+          uveObjetivoMax: clasif.uveObjetivoMax,
+          uveDemanda: clasif.etiquetaDemanda,
+        };
+      });
+
+      const prevSig = HOTSPOT_ZONES.map(z => `${z.id}:${z.name}:${z.scoreGravedad}:${z.radio_m}`).join('|');
+      const nextSig = mappedCatalog.map(z => `${z.id}:${z.name}:${z.scoreGravedad}:${z.radio_m}`).join('|');
+      if (prevSig !== nextSig) {
+        catalogChanged = true;
+        HOTSPOT_ZONES.splice(0, HOTSPOT_ZONES.length, ...mappedCatalog);
+        this.catalogZonesSignal.set([...HOTSPOT_ZONES]);
+        if (this.map && this._AdvancedMarker) {
+          this.initZoneMarkers();
+        }
+      }
+    }
+
+    if (this.getActiveManualZones) {
+      this.manualActiveZoneIds = new Set(this.getActiveManualZones());
+    }
+
+    const combinedIds = new Set<number>(
+      modo === 'MANUAL'
+        ? [...this.manualActiveZoneIds]
+        : [...this.serverActiveZoneIds, ...this.manualActiveZoneIds]
+    );
+
+    const currentRenderedIds = new Set<number>(this.activeZones().map(z => z.id));
+    const targetCircleMap = this.layerPolygons() ? this.map : null;
+    const circlesOutOfSync =
+      !!this.map &&
+      (this.hotspotCircles.size !== combinedIds.size ||
+        [...combinedIds].some(id => {
+          const entry = this.hotspotCircles.get(id);
+          return !entry || entry.perimeter.getMap() !== targetCircleMap || entry.core.getMap() !== targetCircleMap;
+        }));
+    const changed =
+      catalogChanged ||
+      circlesOutOfSync ||
+      currentRenderedIds.size !== combinedIds.size ||
+      [...combinedIds].some(id => !currentRenderedIds.has(id));
+
+    if (changed) {
+      const selected = HOTSPOT_ZONES.filter(z => combinedIds.has(z.id));
+      this.currentActiveIds = combinedIds;
+      this.activeZones.set(selected);
+      if (this.map) {
+        this.heatOverlay.setActiveZones(selected);
+        this.updateHotspotCircles(selected);
+        this.updateZoneMarkersState(combinedIds);
+      }
+    }
+  }
 
   public syncCycleState(): void {
+    if (this.autoRotationEnabled() && !this.serverCycleDriven) {
+      // Esperar la respuesta inicial del Motor Táctico 24/7 del servidor para evitar parpadeo con zonas locales
+      return;
+    }
+    if (this.serverCycleDriven && this.autoRotationEnabled() && this.serverActiveZoneIds.length > 0) {
+      return;
+    }
     if (this.getActiveManualZones) {
       const liveManualIds = this.getActiveManualZones();
       for (const id of liveManualIds) {
@@ -785,7 +956,16 @@ export class MapService {
       this.cycleCountdown.set(0);
 
       const currentRenderedIds = new Set<number>(this.activeZones().map(z => z.id));
+      const targetCircleMap = this.layerPolygons() ? this.map : null;
+      const circlesOutOfSync =
+        !!this.map &&
+        (this.hotspotCircles.size !== manualIds.size ||
+          [...manualIds].some(id => {
+            const entry = this.hotspotCircles.get(id);
+            return !entry || entry.perimeter.getMap() !== targetCircleMap || entry.core.getMap() !== targetCircleMap;
+          }));
       const changed =
+        circlesOutOfSync ||
         currentRenderedIds.size !== manualIds.size ||
         [...manualIds].some(id => !currentRenderedIds.has(id));
 
@@ -856,20 +1036,88 @@ export class MapService {
 
     // Si el ciclo cambió, o cambió la cantidad de zonas en Configuración, o se sincronizaron zonas nuevas:
     this.lastCycleIndex = cycleIndex;
-    const previousIds = stored?.activeZoneIds
-      ? new Set<number>(stored.activeZoneIds)
-      : new Set<number>(this.currentActiveIds);
+    const previousIds = new Set<number>([
+      ...(Array.isArray(stored?.activeZoneIds) ? stored.activeZoneIds : []),
+      ...this.currentActiveIds,
+    ]);
     this.applyCycle(cycleIndex, previousIds, CYCLE_SECS, countZonas);
   }
 
-  /** Selección determinística garantizando representación de delitos Altos, Medios y Bajos según la cantidad configurada (1 a 5 zonas),
-   * descartando estrictamente cualquier zona que ya esté seleccionada o asignada de forma manual. */
+  /**
+   * Calcula dinámicamente la distribución de niveles de riesgo (cuántas zonas ALTO, MEDIO y BAJO
+   * se seleccionarán por ronda de tamaño `count`) analizando la probabilidad / proporción real
+   * de todas las zonas registradas en el sistema (incluyendo cualquier zona nueva agregada).
+   */
+  public getOptimalRiskSlotsForCount(count: number, allZonesInput?: HotspotZone[]): Array<'ALTO' | 'MEDIO' | 'BAJO'> {
+    const allZones = allZonesInput && allZonesInput.length > 0 ? allZonesInput : HOTSPOT_ZONES;
+    const k = Math.max(1, Math.min(5, count));
+
+    const highCount = allZones.filter(z => (z.score_gravedad ?? z.crimeCount * 10) > 80 || z.crimeCount >= 7).length;
+    const medCount = allZones.filter(z => {
+      const s = z.score_gravedad ?? z.crimeCount * 10;
+      return (s >= 40 && s <= 80) || (z.crimeCount >= 4 && z.crimeCount < 7);
+    }).length;
+    const lowCount = allZones.filter(z => (z.score_gravedad ?? z.crimeCount * 10) < 40 && z.crimeCount < 4).length;
+    const total = Math.max(1, highCount + medCount + lowCount);
+
+    // Método de Restos Mayores (Hamilton / Proporción Probabilística) con prioridad táctica ALTO > MEDIO > BAJO
+    const quotas = [
+      { nivel: 'ALTO' as const, available: highCount, exact: (highCount / total) * k, priority: 3 },
+      { nivel: 'MEDIO' as const, available: medCount, exact: (medCount / total) * k, priority: 2 },
+      { nivel: 'BAJO' as const, available: lowCount, exact: (lowCount / total) * k, priority: 1 },
+    ].map(q => ({
+      ...q,
+      slots: Math.min(q.available, Math.floor(q.exact)),
+      remainder: q.exact - Math.floor(q.exact),
+    }));
+
+    // Si k >= 1 y hay zonas de riesgo ALTO disponibles, garantizar al menos 1 cupo ALTO
+    if (k >= 1 && quotas[0].available > 0 && quotas[0].slots === 0) {
+      quotas[0].slots = 1;
+      quotas[0].remainder = 0;
+    }
+    // Si k >= 2 y hay zonas de riesgo MEDIO disponibles, garantizar al menos 1 cupo MEDIO
+    if (k >= 2 && quotas[1].available > 0 && quotas[1].slots === 0 && (quotas[0].slots + quotas[2].slots < k)) {
+      quotas[1].slots = 1;
+      quotas[1].remainder = 0;
+    }
+    // Si k >= 3 y hay zonas de riesgo BAJO disponibles, garantizar al menos 1 cupo BAJO
+    if (k >= 3 && quotas[2].available > 0 && quotas[2].slots === 0 && (quotas[0].slots + quotas[1].slots < k)) {
+      quotas[2].slots = 1;
+      quotas[2].remainder = 0;
+    }
+
+    let assigned = quotas.reduce((sum, q) => sum + q.slots, 0);
+    while (assigned < k) {
+      const candidates = quotas
+        .filter(q => q.slots < q.available)
+        .sort((a, b) => (b.remainder - a.remainder) || (b.priority - a.priority));
+      if (candidates.length === 0) break;
+      candidates[0].slots++;
+      candidates[0].remainder = 0;
+      assigned++;
+    }
+
+    // Construir arreglo de cupos ordenado de MAYOR a MENOR riesgo: ['ALTO', ..., 'MEDIO', ..., 'BAJO', ...]
+    const slots: Array<'ALTO' | 'MEDIO' | 'BAJO'> = [];
+    for (const q of quotas) {
+      for (let i = 0; i < q.slots; i++) {
+        slots.push(q.nivel);
+      }
+    }
+    while (slots.length < k) {
+      slots.push('MEDIO');
+    }
+    return slots.slice(0, k);
+  }
+
+  /** Selección determinística garantizando representación proporcional de delitos Altos, Medios y Bajos según la cantidad configurada (1 a 5 zonas)
+   * y las zonas totales registradas (incluyendo zonas nuevas), descartando estrictamente cualquier zona repetida del ciclo anterior. */
   private pickZonesForCycle(cycleIndex: number, exclude: Set<number>): HotspotZone[] {
     const count = Math.max(1, Math.min(5, this.settings.cantidadZonasRotacion()));
     const allZones = HOTSPOT_ZONES;
     if (allZones.length === 0) return [];
 
-    // Descartar zonas asignadas de forma manual para que el sistema rotativo elija zonas distintas
     const manualIds = this.manualActiveZoneIds;
     const candidateZones = allZones.filter(z => !manualIds.has(z.id));
     const poolZones = candidateZones.length >= count
@@ -883,41 +1131,45 @@ export class MapService {
     };
 
     const sortedPool = [...poolZones].sort((a, b) => calcAntiFixationScore(b) - calcAntiFixationScore(a));
-    const highZones = sortedPool.filter(z => (z.score_gravedad ?? z.crimeCount * 10) > 80 || z.crimeCount >= 7);
-    const mediumZones = sortedPool.filter(z => {
-      const s = z.score_gravedad ?? z.crimeCount * 10;
-      return (s >= 40 && s <= 80) || (z.crimeCount >= 4 && z.crimeCount < 7);
-    });
-    const lowZones = sortedPool.filter(z => (z.score_gravedad ?? z.crimeCount * 10) < 40 && z.crimeCount < 4);
+    const poolsByRisk: Record<'ALTO' | 'MEDIO' | 'BAJO', HotspotZone[]> = {
+      ALTO: sortedPool.filter(z => (z.score_gravedad ?? z.crimeCount * 10) > 80 || z.crimeCount >= 7),
+      MEDIO: sortedPool.filter(z => {
+        const s = z.score_gravedad ?? z.crimeCount * 10;
+        return (s >= 40 && s <= 80) || (z.crimeCount >= 4 && z.crimeCount < 7);
+      }),
+      BAJO: sortedPool.filter(z => (z.score_gravedad ?? z.crimeCount * 10) < 40 && z.crimeCount < 4),
+    };
 
-    const pickFromPool = (pool: HotspotZone[], pickedIds: Set<number>): HotspotZone | null => {
-      // 1. Zonas del pool que no estén en la rotación previa, no hayan sido tomadas en este ciclo y no sean manuales
+    const pickNonRepeating = (pool: HotspotZone[], pickedIds: Set<number>, offset: number): HotspotZone | null => {
       const nonExcluded = pool.filter(z => !exclude.has(z.id) && !pickedIds.has(z.id) && !manualIds.has(z.id));
       if (nonExcluded.length > 0) {
-        return nonExcluded[Math.abs(cycleIndex) % nonExcluded.length];
+        return nonExcluded[Math.abs(cycleIndex + offset) % nonExcluded.length];
       }
-      // 2. Si se agotan, relajar la exclusión del ciclo previo pero manteniendo el descarte de zonas manuales
-      const notInThisCycle = pool.filter(z => !pickedIds.has(z.id) && !manualIds.has(z.id));
-      if (notInThisCycle.length > 0) {
-        return notInThisCycle[Math.abs(cycleIndex) % notInThisCycle.length];
+      return null;
+    };
+
+    const pickFallback = (pool: HotspotZone[], pickedIds: Set<number>, offset: number): HotspotZone | null => {
+      const samePoolNotPicked = pool.filter(z => !pickedIds.has(z.id) && !manualIds.has(z.id));
+      if (samePoolNotPicked.length > 0) {
+        return samePoolNotPicked[Math.abs(cycleIndex + offset) % samePoolNotPicked.length];
       }
-      // 3. Fallback extremo solo si no hubiera suficientes zonas en todo el sistema
-      const fallbackAny = pool.filter(z => !pickedIds.has(z.id));
-      if (fallbackAny.length > 0) {
-        return fallbackAny[Math.abs(cycleIndex) % fallbackAny.length];
+      const anyNonExcluded = poolZones.filter(z => !exclude.has(z.id) && !pickedIds.has(z.id) && !manualIds.has(z.id));
+      if (anyNonExcluded.length > 0) {
+        return anyNonExcluded[Math.abs(cycleIndex + offset) % anyNonExcluded.length];
       }
       return null;
     };
 
     const picked: HotspotZone[] = [];
     const pickedIds = new Set<number>();
-    const poolPriority = [highZones, mediumZones, lowZones, highZones, mediumZones];
+    const riskSlots = this.getOptimalRiskSlotsForCount(count, poolZones);
 
-    for (let i = 0; i < count; i++) {
-      const preferredPool = poolPriority[i % poolPriority.length];
-      let zone = pickFromPool(preferredPool, pickedIds);
+    for (let i = 0; i < riskSlots.length; i++) {
+      const targetRisk = riskSlots[i];
+      const preferredPool = poolsByRisk[targetRisk];
+      let zone = pickNonRepeating(preferredPool, pickedIds, i);
       if (!zone) {
-        zone = pickFromPool(poolZones, pickedIds);
+        zone = pickFallback(preferredPool, pickedIds, i);
       }
       if (zone) {
         picked.push(zone);
@@ -927,8 +1179,44 @@ export class MapService {
 
     if (picked.length > 0) return picked;
 
-    const finalFallback = poolZones.filter(z => !manualIds.has(z.id));
-    return finalFallback.length > 0 ? finalFallback.slice(0, count) : allZones.slice(0, count);
+    const finalFallback = poolZones.filter(z => !manualIds.has(z.id) && !exclude.has(z.id));
+    return finalFallback.length >= count ? finalFallback.slice(0, count) : poolZones.slice(0, count);
+  }
+
+  /**
+   * Retorna las K zonas exactas que corresponden al ciclo rotativo actual (o previsualización
+   * antes de activar el modo Automático / Optimizado desde Modo Manual).
+   */
+  public getTargetZonesForAutoPreview(): HotspotZone[] {
+    const countZonas = Math.max(1, Math.min(5, this.settings.cantidadZonasRotacion()));
+    const active = this.activeZones();
+    if (this.autoRotationEnabled() && active.length === countZonas) {
+      return active;
+    }
+
+    const CYCLE_SECS = this.settings.intervaloRotacionSeg();
+    const nowSec = Math.floor(Date.now() / 1000);
+    const cycleIndex = Math.floor(nowSec / CYCLE_SECS);
+
+    try {
+      const raw = localStorage.getItem('sigo_current_cycle_state');
+      if (raw) {
+        const stored = JSON.parse(raw);
+        if (
+          stored &&
+          stored.cycleIndex === cycleIndex &&
+          stored.intervaloSeg === CYCLE_SECS &&
+          stored.cantidadZonas === countZonas &&
+          Array.isArray(stored.activeZoneIds) &&
+          stored.activeZoneIds.length === countZonas
+        ) {
+          const found = HOTSPOT_ZONES.filter(z => stored.activeZoneIds.includes(z.id));
+          if (found.length === countZonas) return found;
+        }
+      }
+    } catch {}
+
+    return this.pickZonesForCycle(cycleIndex, new Set());
   }
 
   private applyCycle(
@@ -996,7 +1284,10 @@ export class MapService {
         break;
       case 'polygons':
         this.layerPolygons.set(visible);
-        this.hotspotCircles.forEach(c => c.setMap(visible ? this.map : null));
+        this.hotspotCircles.forEach(({ perimeter, core }) => {
+          perimeter.setMap(visible ? this.map : null);
+          core.setMap(visible ? this.map : null);
+        });
         this.zoneMarkers.forEach(m => {
           if (typeof m.setMap === 'function') m.setMap(visible ? this.map : null);
         });
@@ -1104,6 +1395,12 @@ export class MapService {
   }
 
   reconcileManualActiveZones(validManualZoneIds: Set<number>): void {
+    // Si el ciclo está controlado por el servidor 24/7 en modo AUTO/OPTIMIZADO,
+    // NO sobrescribir las zonas del servidor con el estado antiguo de localStorage.
+    if (this.serverCycleDriven && this.autoRotationEnabled()) {
+      return;
+    }
+
     let changed = false;
     for (const id of Array.from(this.manualActiveZoneIds)) {
       if (!validManualZoneIds.has(id)) {
@@ -1114,15 +1411,17 @@ export class MapService {
     }
     const currentRenderedIds = new Set<number>(this.activeZones().map(z => z.id));
     const targetIds = new Set<number>();
-    try {
-      const raw = localStorage.getItem('sigo_current_cycle_state');
-      if (raw) {
-        const stored = JSON.parse(raw);
-        if (stored && Array.isArray(stored.activeZoneIds)) {
-          stored.activeZoneIds.forEach((id: number) => targetIds.add(id));
+    if (!this.serverCycleDriven) {
+      try {
+        const raw = localStorage.getItem('sigo_current_cycle_state');
+        if (raw) {
+          const stored = JSON.parse(raw);
+          if (stored && Array.isArray(stored.activeZoneIds)) {
+            stored.activeZoneIds.forEach((id: number) => targetIds.add(id));
+          }
         }
-      }
-    } catch { }
+      } catch { }
+    }
     this.manualActiveZoneIds.forEach(id => targetIds.add(id));
 
     const needsUpdate =
@@ -1162,8 +1461,8 @@ export class MapService {
   }
 
   upsertUnitMarker(sesion: SesionOperativa): void {
-    const coords = sesion.coordenadas_rt;
-    if (!coords || !this._AdvancedMarker || !this.map) return;
+    if (!this._AdvancedMarker || !this.map) return;
+    const coords = sesion.coordenadas_rt ?? { lat: -33.0245, lng: -71.5518 };
     const key = sesion.imei_simcard;
     const pos = new google.maps.LatLng(coords.lat, coords.lng);
     const config = ESTADO_CONFIG[sesion.estado_operativo] || ESTADO_CONFIG[EstadoOperativo.DISPONIBLE];
@@ -1229,35 +1528,53 @@ export class MapService {
     }
   }
 
-  /** Dibuja el polígono o círculo táctico en el mapa para misiones en áreas personalizadas */
+  /** Dibuja o actualiza en sitio el polígono o círculo táctico en el mapa para misiones en áreas personalizadas */
   upsertPolygon(asignacion: AsignacionTactica): void {
-    this.polygonRefs.get(asignacion.id_asignacion)?.setMap(null);
-    this.circleRefs.get(asignacion.id_asignacion)?.setMap(null);
-
     // Si la misión corresponde a una Zona Táctica catalogada (ej. Chonta Z1 o Z2..Z9),
-    // activar de inmediato la zona con sus círculos concéntricos de patrullaje y mapa de calor
+    // activar la zona como manual SOLO si no fue un despacho automático del ciclo rotativo
     const matchedHotspot = findMatchingHotspotZone(asignacion);
+    const esDespachoAutomatico =
+      typeof asignacion.instrucciones === 'string' &&
+      (asignacion.instrucciones.includes('Despacho Automático') ||
+        asignacion.instrucciones.includes('Despacho Auto-Optimizado'));
 
     if (asignacion.estado_mision === 'COMPLETADA' || asignacion.estado_mision === 'CANCELADA') {
-      if (matchedHotspot) {
+      this.removePolygon(asignacion.id_asignacion);
+      if (matchedHotspot && !esDespachoAutomatico) {
         this.releaseActiveZone(matchedHotspot.id);
       }
       return;
     }
 
     if (matchedHotspot) {
-      this.ensureActiveZone(matchedHotspot);
+      if (!esDespachoAutomatico && !this.autoRotationEnabled()) {
+        this.ensureActiveZone(matchedHotspot);
+      }
       return;
     }
 
     const visible = this.layerPolygons();
 
-    // Si tiene centro y radio, dibujamos un google.maps.Circle geográficamente exacto
+    // Si tiene centro y radio, actualizamos en sitio o creamos el google.maps.Circle
     if (asignacion.centro_lat != null && asignacion.centro_lng != null) {
+      const radius = Math.max(asignacion.radio_m || 50, 50);
+      const existingCircle = this.circleRefs.get(asignacion.id_asignacion);
+      if (existingCircle) {
+        const targetMap = visible ? this.map : null;
+        if (existingCircle.getMap() !== targetMap) existingCircle.setMap(targetMap);
+        const curCenter = existingCircle.getCenter();
+        if (!curCenter || Math.abs(curCenter.lat() - asignacion.centro_lat) > 0.000001 || Math.abs(curCenter.lng() - asignacion.centro_lng) > 0.000001) {
+          existingCircle.setCenter({ lat: asignacion.centro_lat, lng: asignacion.centro_lng });
+        }
+        if (existingCircle.getRadius() !== radius) {
+          existingCircle.setRadius(radius);
+        }
+        return;
+      }
       const circle = new google.maps.Circle({
         map: visible ? this.map : null,
         center: { lat: asignacion.centro_lat, lng: asignacion.centro_lng },
-        radius: Math.max(asignacion.radio_m || 50, 50),
+        radius,
         strokeColor: '#ef4444',
         strokeOpacity: 0.9,
         strokeWeight: 2,
@@ -1270,6 +1587,12 @@ export class MapService {
 
     if (asignacion.geom_destino?.coordinates?.[0]) {
       const coords = asignacion.geom_destino.coordinates[0].map(([lng, lat]) => ({ lat, lng }));
+      const existingPoly = this.polygonRefs.get(asignacion.id_asignacion);
+      if (existingPoly) {
+        const targetMap = visible ? this.map : null;
+        if (existingPoly.getMap() !== targetMap) existingPoly.setMap(targetMap);
+        return;
+      }
       const poly = new google.maps.Polygon({
         map: visible ? this.map : null, paths: coords,
         strokeColor: '#ef4444', strokeOpacity: 0.9, strokeWeight: 2,
@@ -1317,12 +1640,20 @@ export class MapService {
   }
 
   syncDatabaseZones(zonas: ZonaPatrullaje[]): void {
+    // Si el ciclo está controlado por el servidor 24/7, el catálogo ya viene en /tactico/estado
+    // y no debe ser sobrescrito por lecturas parciales de localStorage.
+    if (this.serverCycleDriven) {
+      return;
+    }
     const prevSignature = HOTSPOT_ZONES.map(z => `${z.id}:${z.scoreGravedad}:${z.radio_m}`).join('|');
     syncDatabaseZones(zonas);
     const nextSignature = HOTSPOT_ZONES.map(z => `${z.id}:${z.scoreGravedad}:${z.radio_m}`).join('|');
+    if (prevSignature !== nextSignature || this.catalogZonesSignal().length !== HOTSPOT_ZONES.length) {
+      this.catalogZonesSignal.set([...HOTSPOT_ZONES]);
+    }
     this.syncCycleState();
     if (this.map && this._AdvancedMarker) {
-      if (prevSignature !== nextSignature || this.zoneMarkers.length !== HOTSPOT_ZONES.length) {
+      if (prevSignature !== nextSignature || this.zoneMarkers.size !== HOTSPOT_ZONES.length) {
         this.initZoneMarkers();
       }
       this.updateZoneMarkersState(this.currentActiveIds);
@@ -1339,10 +1670,7 @@ export class MapService {
 
   renderPatrolZones(zonas: ZonaPatrullaje[]): void {
     if (!this.map) return;
-    // Sincronizar todas las zonas en HOTSPOT_ZONES para unificar la gestión táctica
     this.syncDatabaseZones(zonas);
-    // Ya no se dibujan círculos estáticos en zonas inactivas.
-    // Los radios y mapas de calor se activan EXCLUSIVAMENTE cuando el algoritmo o el operador activan la zona en activeZones.
   }
 
   getMap(): google.maps.Map { return this.map; }
@@ -1356,12 +1684,17 @@ export class MapService {
       if (typeof m.setMap === 'function') m.setMap(null);
     });
     this.patrolZoneMarkers.clear();
-    this.hotspotCircles.forEach(c => c.setMap(null));
-    this.hotspotCircles = [];
+    this.hotspotCircles.forEach(({ perimeter, core }) => {
+      perimeter.setMap(null);
+      core.setMap(null);
+    });
+    this.hotspotCircles.clear();
+    this.hotspotPolygons.forEach(p => p.setMap(null));
+    this.hotspotPolygons.clear();
     this.zoneMarkers.forEach(m => {
       if (typeof m.setMap === 'function') m.setMap(null);
     });
-    this.zoneMarkers = [];
+    this.zoneMarkers.clear();
   }
 
   // ─── Marcadores de Patrullas (SVG sin emojis) ─────────────────────────────
@@ -1399,9 +1732,39 @@ export class MapService {
     this.ficticiaRefs.set(id, marker);
   }
 
+  hasFicticiaMarker(id: string): boolean {
+    return this.ficticiaRefs.has(id);
+  }
+
+  upsertFicticiaMarker(
+    id: string,
+    lat: number,
+    lng: number,
+    tipo: string,
+    estado: 'DISPONIBLE' | 'EN_RUTA' | 'PATRULLANDO',
+    valorUve?: number,
+    dotacionTotal?: number
+  ): void {
+    if (!this._AdvancedMarker || !this.map) return;
+    if (!this.ficticiaRefs.has(id)) {
+      this.addFicticiaMarker(id, lat, lng, tipo, estado, valorUve, dotacionTotal);
+      return;
+    }
+    this.moveFicticiaMarker(id, lat, lng);
+    const m = this.ficticiaRefs.get(id);
+    if (m && typeof m.getMap === 'function' && m.getMap() !== this.map) {
+      m.setMap(this.layerSimcards() ? this.map : null);
+    }
+    this.updateFicticiaMarkerColor(id, estado);
+  }
+
   moveFicticiaMarker(id: string, lat: number, lng: number): void {
     const m = this.ficticiaRefs.get(id);
-    if (m) (m as any).position = new google.maps.LatLng(lat, lng);
+    if (!m) return;
+    const cur = (m as any).position;
+    if (!cur || Math.abs(cur.lat() - lat) > 0.000001 || Math.abs(cur.lng() - lng) > 0.000001) {
+      (m as any).position = new google.maps.LatLng(lat, lng);
+    }
   }
 
   updateFicticiaMarkerColor(id: string, estado: 'DISPONIBLE' | 'EN_RUTA' | 'PATRULLANDO'): void {
@@ -1411,6 +1774,9 @@ export class MapService {
     const tipo = meta[0] || 'RPD';
     const uve = Number(meta[1] || 0.8);
     const dot = Number(meta[2] || 2);
+    const sig = `${tipo}|${uve}|${dot}|${estado}`;
+    if ((el as any).__renderSig === sig) return;
+    (el as any).__renderSig = sig;
     const color = this._ficticiaColor(estado);
     el.innerHTML = this._buildFicticiaMarkerHtml(color, tipo, estado, uve, dot);
   }

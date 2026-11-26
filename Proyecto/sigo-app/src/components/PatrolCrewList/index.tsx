@@ -23,6 +23,7 @@ interface PatrolCrewListProps {
   tipoTransporte: string;
   identificadorUnidad?: string;
   onCrewChange: () => void;
+  onInputFocus?: () => void;
 }
 
 const getTransportIcon = (tipo: string): IconName => {
@@ -54,6 +55,7 @@ export default function PatrolCrewList({
   tipoTransporte,
   identificadorUnidad,
   onCrewChange,
+  onInputFocus,
 }: PatrolCrewListProps) {
   const { Colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -255,6 +257,7 @@ export default function PatrolCrewList({
               placeholderTextColor={Colors.textMuted}
               value={addRut}
               onChangeText={setAddRut}
+              onFocus={() => onInputFocus?.()}
               autoCapitalize="none"
               returnKeyType="done"
               onSubmitEditing={() => Keyboard.dismiss()}

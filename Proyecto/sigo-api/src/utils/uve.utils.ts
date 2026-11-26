@@ -296,6 +296,104 @@ export function validarYCalcularUve(
   };
 }
 
+/**
+ * Resuelve el TipoMedio efectivo ('RPT' | 'RPD' | 'FZ' | 'MTT' | 'CB' | 'INF')
+ * en función del código/transporte y la cantidad de acompañantes, aceptando firma
+ * directa (rawTipo, cantidadAcompanantes) o firma de sesión (rawTipo, tipoTransporte, cantidadAcompanantes, identificadorUnidad).
+ */
+export function resolverTipoMedio(
+  rawTipo?: string | null,
+  arg2?: number | string | null,
+  arg3?: number | null,
+  arg4?: string | null
+): TipoMedio {
+  if (typeof arg2 === 'number' || arg2 === undefined) {
+    const res = validarYCalcularUve(rawTipo || 'PATRULLA', arg2 ?? 1, false);
+    return res.tipo_medio;
+  }
+  const numComp = typeof arg3 === 'number' ? arg3 : 0;
+  const ident = (arg4 || '').trim().toUpperCase();
+  const esFz = ident.startsWith('FZ') || arg2 === 'FURGON_Z' || rawTipo === 'FZ';
+  const base = esFz ? 'FZ' : (rawTipo || arg2 || 'PATRULLA');
+  const res = validarYCalcularUve(base, numComp, false);
+  return res.tipo_medio;
+}
+
+/**
+ * Compensación geodésica Mercator: convierte un radio en metros a píxeles de pantalla
+ * en función de la latitud y el nivel de zoom del mapa.
+ */
+export function metersToPx(meters: number, lat: number, zoom: number): number {
+  const mpp = (156543.03392 * Math.cos((lat * Math.PI) / 180)) / Math.pow(2, zoom);
+  return Math.max(14, Math.min(75, meters / mpp));
+}
+
+/**
+ * Decodificador binario PostGIS EWKB / WKB (hex) a coordenadas { lat, lng }
+ * sin pérdida de precisión decimal IEEE-754 Float64.
+ */
+export function parseEwkbPoint(hex: string): { lat: number; lng: number } | null {
+  try {
+    if (!hex || typeof hex !== 'string' || hex.length < 42) return null;
+    const clean = hex.trim();
+    if (clean.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(clean)) return null;
+    const bytes = clean.match(/.{2}/g);
+    if (!bytes) return null;
+    const buf = new Uint8Array(bytes.map(h => parseInt(h, 16)));
+    const view = new DataView(buf.buffer);
+    const isLE = buf[0] === 1;
+    const wkbType = view.getUint32(1, isLE);
+    const hasSrid = (wkbType & 0x20000000) !== 0;
+    const geomBaseType = wkbType & 0xff;
+    if (geomBaseType !== 1) return null; // Solo POINT (1)
+    const offset = hasSrid ? 9 : 5;
+    if (buf.byteLength < offset + 16) return null;
+    const lng = view.getFloat64(offset, isLE);
+    const lat = view.getFloat64(offset + 8, isLE);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    return { lat, lng };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Máquina de estados operativos inmutables de unidades tácticas.
+ */
+export type EstadoOperativoUnidad =
+  | 'DISPONIBLE'
+  | 'EN_RUTA'
+  | 'PATRULLANDO'
+  | 'DESVIADO'
+  | 'SOS';
+
+const TRANSICIONES_VALIDAS: Record<EstadoOperativoUnidad, ReadonlyArray<EstadoOperativoUnidad>> = {
+  DISPONIBLE: ['EN_RUTA', 'SOS'],
+  EN_RUTA: ['PATRULLANDO', 'DESVIADO', 'SOS', 'DISPONIBLE'],
+  PATRULLANDO: ['DESVIADO', 'SOS', 'DISPONIBLE', 'EN_RUTA'],
+  DESVIADO: ['EN_RUTA', 'PATRULLANDO', 'SOS', 'DISPONIBLE'],
+  SOS: ['DISPONIBLE', 'PATRULLANDO'],
+};
+
+export function validarTransicionEstado(
+  estadoActual: EstadoOperativoUnidad,
+  nuevoEstado: EstadoOperativoUnidad
+): { valid: boolean; from: EstadoOperativoUnidad; to: EstadoOperativoUnidad; reason?: string } {
+  const permitidos = TRANSICIONES_VALIDAS[estadoActual];
+  if (!permitidos) {
+    return { valid: false, from: estadoActual, to: nuevoEstado, reason: `Estado origen desconocido: ${estadoActual}` };
+  }
+  if (!permitidos.includes(nuevoEstado)) {
+    return {
+      valid: false,
+      from: estadoActual,
+      to: nuevoEstado,
+      reason: `Transición inválida: ${estadoActual} -> ${nuevoEstado}. Permitidos: ${permitidos.join(', ')}`,
+    };
+  }
+  return { valid: true, from: estadoActual, to: nuevoEstado };
+}
+
 // ============================================================================
 // 2. CLASIFICACIÓN DE ZONAS POR GRAVEDAD DELICTUAL (CALIBRACIÓN ACTUALIZADA)
 // ============================================================================

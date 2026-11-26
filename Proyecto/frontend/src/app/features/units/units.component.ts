@@ -14,6 +14,7 @@ import {
   SesionOperativa, EstadoOperativo, TipoTransporte,
   ESTADO_CONFIG, EstadoConfig, calcularUveSesion,
 } from '../../core/models';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-units',
@@ -406,6 +407,7 @@ export class UnitsComponent implements OnInit, OnDestroy {
 
   private subSesiones?: any;
   private subTripulacion?: any;
+  private syncTimer?: any;
 
   readonly estadosResumen = Object.values(EstadoOperativo)
     .filter(e => e !== EstadoOperativo.INACTIVO)
@@ -452,10 +454,14 @@ export class UnitsComponent implements OnInit, OnDestroy {
     this.subTripulacion = this.supabaseService.subscribeToTripulacion(() => {
       this.cargarSilencioso();
     });
+    this.syncTimer = setInterval(() => {
+      this.cargarSilencioso();
+    }, 2000);
   }
 
   ngOnDestroy(): void {
     try {
+      if (this.syncTimer) clearInterval(this.syncTimer);
       this.subSesiones?.unsubscribe?.();
       this.subTripulacion?.unsubscribe?.();
     } catch (e) {
@@ -487,40 +493,70 @@ export class UnitsComponent implements OnInit, OnDestroy {
       }
     }
 
-    // Cargar patrullas ficticias / RP de prueba desde localStorage
+    // Cargar patrullas demo sincronizadas en tiempo real desde el Motor Táctico 24/7 del servidor
     let ficticias: any[] = [];
     try {
-      const saved = localStorage.getItem('sigo_patrullas_ficticias');
-      if (saved) {
-        const list = JSON.parse(saved);
-        if (Array.isArray(list)) {
-          ficticias = list.map((p: any, idx: number) => ({
+      let list: any[] = [];
+      const res = await fetch(`${environment.apiBaseUrl}/tactico/estado`).catch(() => null);
+      if (res && res.ok) {
+        const estadoServer = await res.json();
+        if (Array.isArray(estadoServer?.patrullas)) {
+          list = estadoServer.patrullas;
+        }
+      } else {
+        const saved = localStorage.getItem('sigo_patrullas_ficticias');
+        if (saved) list = JSON.parse(saved) || [];
+      }
+
+      if (Array.isArray(list)) {
+        ficticias = list.map((p: any, idx: number) => {
+          const destinoNombre = p.destino_zona_json?.name || p.destinoZone?.name || null;
+          const medio = p.tipo_medio || p.tipo || 'RPD';
+          const tipoTrans =
+            medio === 'FZ' || medio === 'FURGON_Z'
+              ? 'FURGON_Z'
+              : medio === 'MTT' || medio === 'MOTO'
+                ? 'MOTO'
+                : medio === 'CB' || medio === 'BICICLETA'
+                  ? 'BICICLETA'
+                  : medio === 'INF' || medio === 'INFANTERIA'
+                    ? 'INFANTERIA'
+                    : 'PATRULLA';
+          const estadoOp =
+            p.estado === 'PATRULLANDO'
+              ? EstadoOperativo.PATRULLANDO_ZONA
+              : p.estado === 'EN_RUTA'
+                ? EstadoOperativo.EN_RUTA_HOTSPOT
+                : EstadoOperativo.DISPONIBLE;
+          return {
             id_sesion: 99000 + idx,
             identificador_unidad: p.nombre || `RP-PRUEBA-${idx + 1}`,
             rut_conductor: 'SIMULADO',
             conductor: {
               rut_usuario: 'SIMULADO',
-              nombre_completo: 'Dotación Ficticia',
+              nombre_completo: 'Dotación Táctica 24/7',
               rol: 'FUNCIONARIO'
             },
-            tipo_transporte: p.tipo || 'PATRULLA',
-            estado_operativo: p.estado || 'DISPONIBLE',
-            asignacion_activa: p.destinoZone ? {
+            tipo_transporte: tipoTrans,
+            tipo_medio: medio,
+            valor_uve: p.valor_uve,
+            estado_operativo: estadoOp,
+            asignacion_activa: destinoNombre ? {
               id_asignacion: 99000 + idx,
               id_sesion: 99000 + idx,
-              nombre_zona: p.destinoZone.name,
-              origen_asignacion: p.isManual ? 'MANUAL' : 'ALGORITMO',
+              nombre_zona: destinoNombre,
+              origen_asignacion: (p.is_manual ?? p.isManual) ? 'MANUAL' : 'ALGORITMO',
               estado: 'EN_CURSO',
               fecha_asignacion: new Date().toISOString()
             } : null,
             fecha_inicio: new Date().toISOString(),
             es_ficticia: true,
             ficticiaRaw: p
-          }));
-        }
+          };
+        });
       }
     } catch (e) {
-      console.warn('[UnitsComponent] Error leyendo patrullas ficticias:', e);
+      console.warn('[UnitsComponent] Error leyendo patrullas tácticas:', e);
     }
 
     this.sesiones.set([...data, ...ficticias]);

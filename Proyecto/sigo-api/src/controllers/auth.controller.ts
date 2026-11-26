@@ -314,6 +314,20 @@ export async function getMe(
       return;
     }
 
+    if (sesion.fecha_cierre) {
+      await supabaseAdmin
+        .from('sesiones_operativas')
+        .update({
+          fecha_cierre: null,
+          estado_operativo: sesion.estado_operativo === 'INACTIVO' ? 'DISPONIBLE' : sesion.estado_operativo,
+        })
+        .eq('id_sesion', patrol_id);
+      sesion.fecha_cierre = null;
+      if (sesion.estado_operativo === 'INACTIVO') {
+        sesion.estado_operativo = 'DISPONIBLE';
+      }
+    }
+
     const memUve = memorySesionesUve.get(String(patrol_id));
     const numComp = Array.isArray(sesion.tripulacion_sesion) ? sesion.tripulacion_sesion.length : 0;
     const esFurgon = (sesion.identificador_unidad || '').startsWith('FZ') || sesion.tipo_transporte === 'FURGON_Z' || memUve?.tipo_medio === 'FZ';

@@ -1,0 +1,50 @@
+// Top-level build file where you can add configuration options common to all sub-projects/modules.
+
+buildscript {
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath('com.android.tools.build:gradle')
+    classpath('com.facebook.react:react-native-gradle-plugin')
+    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
+  }
+}
+
+allprojects {
+  repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://www.jitpack.io' }
+  }
+}
+
+subprojects { subproj ->
+  def shortMap = [
+    "react-native-reanimated": "rnre",
+    "react-native-gesture-handler": "rngh",
+    "react-native-screens": "rnsc",
+    "react-native-worklets": "rnwk",
+    "react-native-safe-area-context": "rnsa",
+    "react-native-svg": "rnsv",
+    "react-native-maps": "rnmp",
+    "react-native-async-storage_async-storage": "rnas",
+    "expo-modules-core": "emc"
+  ]
+  def sName = shortMap[subproj.name] ?: subproj.name
+  afterEvaluate {
+    if (subproj.hasProperty("android")) {
+      subproj.android {
+        if (it.hasProperty("externalNativeBuild") && it.externalNativeBuild.hasProperty("cmake")) {
+          it.externalNativeBuild.cmake {
+            buildStagingDirectory = file("C:/x/${sName}")
+          }
+        }
+      }
+    }
+  }
+}
+
+apply plugin: "expo-root-project"
+apply plugin: "com.facebook.react.rootproject"

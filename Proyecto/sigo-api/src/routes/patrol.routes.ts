@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '../middleware/auth.middleware';
 import { supabaseAdmin } from '../config/supabase';
+import { tacticalEngine } from '../utils/tacticalEngine';
 import {
   requestReinforcements,
   addCrewMember,
@@ -98,10 +99,11 @@ patrolRouter.get('/retrasos', async (req, res) => {
   }> = [];
 
   for (const a of (asigs ?? [])) {
-    const etaMatch = typeof a.instrucciones === 'string'
+    const isSos = typeof a.instrucciones === 'string' && a.instrucciones.includes('Código Rojo');
+    const etaMatch = isSos && typeof a.instrucciones === 'string'
       ? a.instrucciones.match(/\[ETA:(\d+(?:\.\d+)?)\]/i)
       : null;
-    const limiteMin = Number(a.tiempo_limite_min) || (etaMatch ? Number(etaMatch[1]) : 15);
+    const limiteMin = Number(a.tiempo_limite_min) || (etaMatch ? Number(etaMatch[1]) : tacticalEngine.getTiempoLlegadaMin());
     const fechaDespachoRaw = a.hora_despacho || a.fecha_asignacion || a.created_at;
     const inicioMs = parseUtcMs(fechaDespachoRaw);
     if (!inicioMs) continue;

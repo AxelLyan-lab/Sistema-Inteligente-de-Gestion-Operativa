@@ -57,8 +57,8 @@ export async function getSesionesActivas(
     const sesiones = (data ?? []).map((s: any) => {
       const numAcompanantes = Array.isArray(s.tripulacion) ? s.tripulacion.length : 0;
       const esFurgonZ = String(s.identificador_unidad || '').toUpperCase().startsWith('FZ') || s.tipo_transporte === 'FURGON_Z' || s.tipo_medio === 'FZ';
-      const tipoMedio = s.tipo_medio || resolverTipoMedio(esFurgonZ ? 'FURGON_Z' : s.tipo_transporte, numAcompanantes);
-      const valorUve = s.valor_uve != null ? Number(s.valor_uve) : CONFIG_MEDIOS_UVE[tipoMedio].valorUve;
+      const tipoMedio = resolverTipoMedio(esFurgonZ ? 'FURGON_Z' : (s.tipo_medio || s.tipo_transporte), numAcompanantes);
+      const valorUve = s.valor_uve != null ? Number(s.valor_uve) : CONFIG_MEDIOS_UVE[tipoMedio].valor_uve;
       return {
         ...s,
         tipo_medio: tipoMedio,
@@ -123,8 +123,8 @@ export async function getSesionDetalle(
 
     const numAcompanantes = Array.isArray((data as any).tripulacion) ? (data as any).tripulacion.length : 0;
     const esFurgonZ = String((data as any).identificador_unidad || '').toUpperCase().startsWith('FZ') || (data as any).tipo_transporte === 'FURGON_Z';
-    const tipoMedio = (data as any).tipo_medio || resolverTipoMedio(esFurgonZ ? 'FURGON_Z' : (data as any).tipo_transporte, numAcompanantes);
-    const valorUve = (data as any).valor_uve != null ? Number((data as any).valor_uve) : CONFIG_MEDIOS_UVE[tipoMedio].valorUve;
+    const tipoMedio = resolverTipoMedio(esFurgonZ ? 'FURGON_Z' : ((data as any).tipo_medio || (data as any).tipo_transporte), numAcompanantes);
+    const valorUve = (data as any).valor_uve != null ? Number((data as any).valor_uve) : CONFIG_MEDIOS_UVE[tipoMedio].valor_uve;
 
     res.json({
       ...data,

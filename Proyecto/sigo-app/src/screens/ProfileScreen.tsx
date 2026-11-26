@@ -21,6 +21,7 @@ import { pickPhotoAsset, uploadEvidenceAsset, listEvidence } from '../services/e
 import { Spacing, BorderRadius, Fonts, ThemeColors } from '../theme';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 import Icon, { IconName } from '../components/Icon';
+import SmoothModal from '../components/SmoothModal';
 
 const TRANSPORT_ICONS: Record<string, IconName> = {
   PATRULLA: 'auto',
@@ -275,9 +276,8 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* ── Modal Justificación Automática de Retraso al Cerrar Sesión ── */}
-      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+      <SmoothModal visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Justificación de retraso detectado</Text>
             <Text style={styles.modalSubtitle}>
               El sistema detectó llegada fuera de tiempo en la(s) siguiente(s) zona(s). Debes ingresar el motivo por escrito (imagen o video opcional) para cerrar sesión:
@@ -354,92 +354,95 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </View>
-      </Modal>
+      </SmoothModal>
 
-      {/* ── Modal: Ver mis evidencias del turno ── */}
-      <Modal
+      {/* ── Modal: Ver mis evidencias del turno (Estética unificada con Confirmar Solicitud de Refuerzos) ── */}
+      <SmoothModal
         visible={evidenciasModalVisible}
-        transparent
-        animationType="slide"
         onRequestClose={() => setEvidenciasModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { maxHeight: '80%' }]}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={styles.modalTitle}>Mis evidencias del turno</Text>
-              <TouchableOpacity onPress={() => setEvidenciasModalVisible(false)}>
-                <Icon name="cerrar" size={20} color={Colors.textSecondary} />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.modalSubtitle}>
-              Registros enviados durante tu sesión activa (#{patrol_id})
-            </Text>
+        <View style={styles.evidModalCard}>
+          {/* Badge / Icono circular superior */}
+          <View style={styles.evidIconContainer}>
+            <Icon name="camara" size={32} color={Colors.primary} />
+          </View>
 
-            {loadingEvidencias ? (
-              <View style={{ paddingVertical: 28, alignItems: 'center' }}>
-                <ActivityIndicator color={Colors.primary} />
+          <Text style={styles.evidModalTitle}>Mis evidencias del turno</Text>
+          <Text style={styles.evidModalSubtitle}>
+            Registros audiovisuales y reportes enviados durante tu sesión activa{' '}
+            <Text style={{ fontWeight: '700', color: Colors.primary }}>#{patrol_id}</Text>
+          </Text>
+
+          {loadingEvidencias ? (
+            <View style={styles.evidEmptyBox}>
+              <ActivityIndicator size="large" color={Colors.primary} />
+              <Text style={styles.evidEmptySub}>Consultando registros del turno...</Text>
+            </View>
+          ) : misEvidencias.length === 0 ? (
+            <View style={styles.evidEmptyBox}>
+              <View style={styles.evidEmptyIconCircle}>
+                <Icon name="evidencia" size={26} color={Colors.textMuted} />
               </View>
-            ) : misEvidencias.length === 0 ? (
-              <View style={{ paddingVertical: 28, alignItems: 'center' }}>
-                <Text style={{ color: Colors.textMuted, fontSize: 13 }}>
-                  Aún no has registrado evidencias en este turno.
-                </Text>
-              </View>
-            ) : (
-              <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
-                {misEvidencias.map((ev: any) => (
-                  <View
-                    key={ev.id_evidencia}
-                    style={{
-                      padding: 10,
-                      marginBottom: 8,
-                      borderRadius: BorderRadius.md,
-                      backgroundColor: Colors.background,
-                      borderWidth: 1,
-                      borderColor: Colors.border,
-                      gap: 4,
-                    }}
-                  >
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Text style={{ fontSize: 11, fontWeight: '800', color: Colors.primary }}>
-                        {(ev.tipo_evidencia || 'EVIDENCIA').replace(/_/g, ' ')}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: Colors.textMuted }}>
-                        {formatChileDate(ev.fecha_subida)}
-                      </Text>
+              <Text style={styles.evidEmptyTitle}>Sin evidencias registradas</Text>
+              <Text style={styles.evidEmptySub}>
+                Aún no has enviado fotografías, videos ni justificaciones durante este turno operativo.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              style={styles.evidListScroll}
+              contentContainerStyle={{ gap: 10, paddingBottom: 4 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {misEvidencias.map((ev: any) => {
+                const isVideo = Boolean(ev.url_fotografia && /\.(mp4|mov)$/i.test(ev.url_fotografia));
+                const tipoLabel = (ev.tipo_evidencia || 'EVIDENCIA').replace(/_/g, ' ');
+                return (
+                  <View key={ev.id_evidencia} style={styles.evidItemCard}>
+                    <View style={styles.evidItemHeader}>
+                      <View style={styles.evidTypeBadge}>
+                        <Icon
+                          name={isVideo ? 'video' : ev.tipo_evidencia === 'JUSTIFICACION_ATRASO' ? 'reloj' : 'camara'}
+                          size={12}
+                          color={Colors.primary}
+                        />
+                        <Text style={styles.evidTypeBadgeText}>{tipoLabel}</Text>
+                      </View>
+                      <Text style={styles.evidDateText}>{formatChileDate(ev.fecha_subida)}</Text>
                     </View>
+
                     {ev.descripcion_texto ? (
-                      <Text style={{ fontSize: 12, color: Colors.textPrimary, lineHeight: 17 }}>
-                        {ev.descripcion_texto}
-                      </Text>
+                      <Text style={styles.evidDescText}>{ev.descripcion_texto}</Text>
                     ) : null}
+
                     {ev.url_fotografia ? (
-                      /\.(mp4|mov)$/i.test(ev.url_fotografia) ? (
-                        <Text style={{ fontSize: 11, color: Colors.primary, fontWeight: '600', marginTop: 2 }}>
-                          🎬 Video adjunto
-                        </Text>
+                      isVideo ? (
+                        <View style={styles.evidVideoPill}>
+                          <Icon name="video" size={15} color={Colors.primary} />
+                          <Text style={styles.evidVideoPillText}>Video táctico adjunto</Text>
+                        </View>
                       ) : (
                         <Image
                           source={{ uri: ev.url_fotografia }}
-                          style={{ width: '100%', height: 120, borderRadius: BorderRadius.sm, marginTop: 4 }}
+                          style={styles.evidItemImage}
                         />
                       )
                     ) : null}
                   </View>
-                ))}
-              </ScrollView>
-            )}
+                );
+              })}
+            </ScrollView>
+          )}
 
-            <TouchableOpacity
-              style={[styles.cancelBtn, { flex: 0, marginTop: 4 }]}
-              onPress={() => setEvidenciasModalVisible(false)}
-            >
-              <Text style={styles.cancelBtnText}>Cerrar</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            style={styles.evidClosePrimaryBtn}
+            onPress={() => setEvidenciasModalVisible(false)}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.evidClosePrimaryBtnText}>Cerrar</Text>
+          </TouchableOpacity>
         </View>
-      </Modal>
+      </SmoothModal>
     </SafeAreaView>
   );
 }
@@ -599,9 +602,39 @@ const makeStyles = (Colors: ThemeColors) =>
       borderRadius: BorderRadius.md,
       borderWidth: 1,
       borderColor: Colors.border,
+      backgroundColor: Colors.background,
       alignItems: 'center',
     },
-    cancelBtnText: { color: Colors.textSecondary, fontWeight: '600', fontSize: Fonts.sizes.sm },
+    cancelBtnText: { color: Colors.textPrimary, fontWeight: '700', fontSize: Fonts.sizes.sm },
+    closeIconBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: Colors.background,
+      borderWidth: 1,
+      borderColor: Colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    closeModalPrimaryBtn: {
+      marginTop: 8,
+      paddingVertical: 13,
+      borderRadius: BorderRadius.md,
+      backgroundColor: Colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 3,
+      elevation: 3,
+    },
+    closeModalPrimaryBtnText: {
+      color: Colors.onPrimary,
+      fontWeight: '700',
+      fontSize: Fonts.sizes.sm,
+      letterSpacing: 0.3,
+    },
     confirmBtn: {
       flex: 1,
       paddingVertical: 12,
@@ -618,4 +651,166 @@ const makeStyles = (Colors: ThemeColors) =>
     },
     confirmBtnDisabled: { opacity: 0.45 },
     confirmBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: Fonts.sizes.sm },
+
+    // Estilos del Modal "Mis evidencias del turno" (Estética homologada con EmergencyConfirmModal)
+    evidModalCard: {
+      backgroundColor: Colors.background,
+      borderRadius: BorderRadius.lg,
+      padding: Spacing.xxl,
+      alignItems: 'center',
+      width: '90%',
+      maxWidth: 380,
+      maxHeight: '84%',
+      borderWidth: 1,
+      borderColor: Colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.28,
+      shadowRadius: 12,
+      elevation: 10,
+    },
+    evidIconContainer: {
+      width: 68,
+      height: 68,
+      borderRadius: 34,
+      backgroundColor: Colors.primarySoft,
+      justifyContent: 'center',
+      alignItems: 'center',
+      marginBottom: Spacing.md,
+      borderWidth: 1,
+      borderColor: Colors.primary,
+    },
+    evidModalTitle: {
+      fontSize: Fonts.sizes.xl,
+      fontWeight: '700',
+      color: Colors.textPrimary,
+      textAlign: 'center',
+      marginBottom: Spacing.xs,
+    },
+    evidModalSubtitle: {
+      fontSize: Fonts.sizes.sm,
+      color: Colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 19,
+      marginBottom: Spacing.lg,
+    },
+    evidEmptyBox: {
+      width: '100%',
+      backgroundColor: Colors.surface,
+      borderRadius: BorderRadius.md,
+      paddingVertical: Spacing.xl,
+      paddingHorizontal: Spacing.lg,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: Colors.border,
+      marginBottom: Spacing.lg,
+      gap: 8,
+    },
+    evidEmptyIconCircle: {
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: Colors.background,
+      borderWidth: 1,
+      borderColor: Colors.border,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 4,
+    },
+    evidEmptyTitle: {
+      fontSize: Fonts.sizes.md,
+      fontWeight: '700',
+      color: Colors.textPrimary,
+      textAlign: 'center',
+    },
+    evidEmptySub: {
+      fontSize: Fonts.sizes.xs,
+      color: Colors.textMuted,
+      textAlign: 'center',
+      lineHeight: 17,
+    },
+    evidListScroll: {
+      width: '100%',
+      maxHeight: 330,
+      marginBottom: Spacing.lg,
+    },
+    evidItemCard: {
+      width: '100%',
+      backgroundColor: Colors.surface,
+      borderRadius: BorderRadius.md,
+      padding: Spacing.md,
+      borderWidth: 1,
+      borderColor: Colors.border,
+      gap: 6,
+    },
+    evidItemHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: 8,
+    },
+    evidTypeBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      backgroundColor: Colors.primarySoft,
+      borderWidth: 1,
+      borderColor: Colors.primary,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: BorderRadius.full,
+    },
+    evidTypeBadgeText: {
+      fontSize: 10,
+      fontWeight: '800',
+      color: Colors.primary,
+      letterSpacing: 0.3,
+    },
+    evidDateText: {
+      fontSize: 10,
+      color: Colors.textMuted,
+      fontWeight: '500',
+    },
+    evidDescText: {
+      fontSize: Fonts.sizes.xs,
+      color: Colors.textPrimary,
+      lineHeight: 18,
+    },
+    evidVideoPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      backgroundColor: Colors.primarySoft,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: BorderRadius.sm,
+      alignSelf: 'flex-start',
+      marginTop: 2,
+    },
+    evidVideoPillText: {
+      fontSize: 11,
+      fontWeight: '700',
+      color: Colors.primary,
+    },
+    evidItemImage: {
+      width: '100%',
+      height: 130,
+      borderRadius: BorderRadius.sm,
+      marginTop: 4,
+      resizeMode: 'cover',
+    },
+    evidClosePrimaryBtn: {
+      width: '100%',
+      paddingVertical: Spacing.lg,
+      borderRadius: BorderRadius.md,
+      backgroundColor: Colors.primary,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    evidClosePrimaryBtnText: {
+      fontSize: Fonts.sizes.lg,
+      fontWeight: '600',
+      color: Colors.onPrimary,
+    },
   });

@@ -2,7 +2,8 @@ import React from 'react';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, View, StyleSheet, StatusBar } from 'react-native';
+import { Text, View, StyleSheet, StatusBar, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
@@ -32,12 +33,25 @@ function MainTabs() {
   const { Colors } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { hasUnread } = useMessageBadge();
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, Platform.OS === 'android' ? 12 : 10);
 
   return (
     <Tab.Navigator
+      detachInactiveScreens={false}
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        lazy: false,
+        freezeOnBlur: false,
+        tabBarHideOnKeyboard: true,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            height: 58 + bottomInset,
+            paddingBottom: bottomInset,
+            paddingTop: 6,
+          },
+        ],
         tabBarActiveTintColor: Colors.tabBarActive,
         tabBarInactiveTintColor: Colors.tabBarInactive,
         tabBarLabelStyle: styles.tabLabel,
@@ -104,7 +118,7 @@ export default function AppNavigator() {
     return (
       <View style={styles.loader}>
         <Icon name="escudo" size={56} color={Colors.textWhite} />
-        <Text style={styles.loaderLabel}>S.I.G.O. Patrol</Text>
+        <Text style={styles.loaderLabel}>SIGO</Text>
       </View>
     );
   }
@@ -124,8 +138,8 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer theme={navTheme}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={Colors.background} />
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} {...({ backgroundColor: Colors.background } as any)} />
+      <Stack.Navigator screenOptions={{ headerShown: false, animation: 'fade' }}>
         {!isAuthenticated ? (
           // AuthStack — sin sesión activa
           <Stack.Screen name="Login" component={LoginScreen} />

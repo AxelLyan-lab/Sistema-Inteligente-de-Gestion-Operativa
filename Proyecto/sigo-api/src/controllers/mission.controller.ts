@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { supabaseAdmin } from '../config/supabase';
+import { tacticalEngine } from '../utils/tacticalEngine';
 
 // ── GET /api/v1/patrol/assignment — Misión activa asignada a la sesión ───────
 export async function getActiveAssignment(
@@ -23,8 +24,8 @@ export async function getActiveAssignment(
 
     if (error) throw error;
 
-    let tiempo_limite_minutos = 15;
-    if (data?.instrucciones) {
+    let tiempo_limite_minutos = tacticalEngine.getTiempoLlegadaMin();
+    if (data?.instrucciones && data.instrucciones.includes('Código Rojo')) {
       const match = data.instrucciones.match(/\[ETA:(\d+)\]/);
       if (match) {
         tiempo_limite_minutos = parseInt(match[1], 10);

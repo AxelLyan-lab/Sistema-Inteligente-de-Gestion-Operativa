@@ -55,3 +55,26 @@ scratch/
 skills-lock.json
 **/skills-lock.json
 
+# Informes, presentaciones y documentos personales del autor (no subir al repositorio)
+Documentos Informacion/
+Diseño App movil Figma/
+INFORME_PRESENTACION_QA_DESPLIEGUE.md
+REPORTE_QA_PRE_DESPLIEGUE.md
+ALGORITMO_OPTIMIZACION_UVE.md
+README_SPRINT2.md
+*.docx
+*.pdf
+*.pptx
+
+# Compilados intermedios de Android y APKs duplicados
+Proyecto/sigo-app/android/.gradle/
+Proyecto/sigo-app/android/build/
+Proyecto/sigo-app/android/app/build/
+Proyecto/sigo-app/android/.kotlin/
+Proyecto/sigo-app/android/local.properties
+SIGO-Patrol-Unidades-v1.0.0.apk
+Proyecto/sigo-app/SIGO-Patrol-Unidades-v1.0.0.apk
+Proyecto/sigo-app/SIGO.apk
+Proyecto/sigo-landing/public/SIGO.apk
+
+

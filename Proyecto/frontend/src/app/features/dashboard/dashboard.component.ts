@@ -181,50 +181,51 @@ const MAX_PATRULLAS = 6;
             </div>
 
             <div class="space-y-1 max-h-52 overflow-y-auto pr-0.5">
-              @for (item of coberturaZonasActivas(); track item.zona.id) {
-                <div
-                  (click)="mapService.centerOn(item.zona.lat, item.zona.lng, 16)"
-                  class="px-2 py-1.5 rounded-lg border text-[10px] cursor-pointer transition-colors flex items-center justify-between gap-2"
-                  [ngClass]="
-                    item.deficitUve > 0.001
-                      ? 'bg-red-500/10 border-red-500/40 hover:border-red-400'
-                      : item.excesoUve > 0.001
-                        ? 'bg-indigo-500/10 border-indigo-500/40 hover:border-indigo-400'
-                        : 'bg-sigo-surface/70 border-sigo-border/70 hover:border-sigo-accent/50'
-                  "
-                >
-                  <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-1.5">
-                      <span class="w-2 h-2 rounded-full shrink-0" [style.background]="getRiskColor(item.zona.crimeCount)"></span>
-                      <span class="font-bold text-sigo-text truncate">{{ item.zona.name }}</span>
-                      <span class="text-[9px] text-sigo-muted font-semibold">{{ item.nivelRiesgo }}</span>
-                    </div>
-                    <div class="text-[9px] text-sigo-muted truncate pl-3.5">
-                      {{ item.unidades.length > 0 ? item.resumenUnidades : 'Sin móvil asignado' }}
-                    </div>
+              <div
+                *ngFor="let item of coberturaZonasActivas(); trackBy: trackByCoberturaZona"
+                (click)="mapService.centerOn(item.zona.lat, item.zona.lng, 16)"
+                class="px-2 py-1.5 rounded-lg border text-[10px] cursor-pointer transition-colors flex items-center justify-between gap-2"
+                [ngClass]="
+                  item.deficitUve > 0.001
+                    ? 'bg-red-500/10 border-red-500/40 hover:border-red-400'
+                    : item.excesoUve > 0.001
+                      ? 'bg-indigo-500/10 border-indigo-500/40 hover:border-indigo-400'
+                      : 'bg-sigo-surface/70 border-sigo-border/70 hover:border-sigo-accent/50'
+                "
+              >
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full shrink-0" [style.background]="getRiskColor(item.zona.crimeCount)"></span>
+                    <span class="font-bold text-sigo-text truncate">{{ item.zona.name }}</span>
+                    <span class="text-[9px] text-sigo-muted font-semibold">{{ item.nivelRiesgo }}</span>
                   </div>
-
-                  <div class="flex items-center gap-1 shrink-0">
-                    @if (item.deficitUve > 0.001) {
-                      <span class="px-1.5 py-0.5 rounded bg-red-600 text-white font-extrabold text-[9px]">
-                        Falta -{{ item.deficitUve | number:'1.2-2' }}
-                      </span>
-                    } @else if (item.excesoUve > 0.001) {
-                      <span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white font-extrabold text-[9px]">
-                        Sobra +{{ item.excesoUve | number:'1.2-2' }}
-                      </span>
-                    } @else {
-                      <span class="px-1.5 py-0.5 rounded bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 font-bold text-[9px]">
-                        @if (item.nivelRiesgo === 'MEDIO') {
-                          {{ item.uveAsignada | number:'1.2-2' }} / 0.45-0.80
-                        } @else {
-                          {{ item.uveAsignada | number:'1.2-2' }}/{{ item.uveRequerida | number:'1.2-2' }}
-                        }
-                      </span>
-                    }
+                  <div class="text-[9px] text-sigo-muted truncate pl-3.5">
+                    {{ item.unidades.length > 0 ? item.resumenUnidades : 'Sin móvil asignado' }}
                   </div>
                 </div>
-              }
+
+                <div class="flex items-center gap-1 shrink-0">
+                  @if (item.deficitUve > 0.001) {
+                    <span class="px-1.5 py-0.5 rounded bg-red-600 text-white font-extrabold text-[9px]">
+                      Falta -{{ item.deficitUve | number:'1.2-2' }}
+                    </span>
+                  } @else if (item.excesoUve > 0.001) {
+                    <span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white font-extrabold text-[9px]">
+                      Sobra +{{ item.excesoUve | number:'1.2-2' }}
+                    </span>
+                  } @else {
+                    <span class="px-1.5 py-0.5 rounded bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 font-bold text-[9px]">
+                      @if (item.nivelRiesgo === 'MEDIO') {
+                        {{ item.uveAsignada | number:'1.2-2' }} / 0.45-0.80
+                      } @else if (item.nivelRiesgo === 'BAJO') {
+                        {{ item.uveAsignada | number:'1.2-2' }} / 0.20-0.30
+                      } @else {
+                        {{ item.uveAsignada | number:'1.2-2' }}/{{ item.uveRequerida | number:'1.2-2' }}
+                      }
+                    </span>
+                  }
+                </div>
+              </div>
             </div>
           </div>
         }
@@ -431,7 +432,7 @@ const MAX_PATRULLAS = 6;
                 ⚡ Automático
               </button>
               <button
-                (click)="confirmandoModo.set('OPTIMIZADO')"
+                (click)="abrirModalOptimizado()"
                 class="py-2 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition-colors cursor-pointer shadow-sm"
               >
                 🎯 Auto Optimizado
@@ -507,62 +508,225 @@ const MAX_PATRULLAS = 6;
       @if (confirmandoModo() === 'OPTIMIZADO') {
         @if (analisisModoOptimizado(); as plan) {
           <div class="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-            <div class="bg-sigo-surface border border-sigo-border rounded-2xl max-w-lg w-full p-5 shadow-2xl space-y-4">
+            <div class="bg-sigo-surface border border-sigo-border rounded-2xl max-w-xl w-full p-5 shadow-2xl space-y-4">
               <div class="flex items-center justify-between border-b border-sigo-border pb-3">
                 <div>
-                  <h3 class="text-sm font-extrabold text-sigo-text">🎯 Modo Automático Optimizado</h3>
+                  <h3 class="text-sm font-extrabold text-sigo-text">🎯 Modo Automático Optimizado (Margen ±{{ plan.toleranciaUve | number:'1.2-2' }} U.V.E.)</h3>
                   <p class="text-[11px] text-sigo-muted">
-                    Plan calculado para las {{ plan.kZonas }} zonas configuradas (según sesiones activas).
+                    Cálculo optimizado según las {{ plan.kZonas }} zonas configuradas en Ajustes, aprovechando al máximo los recursos activos.
                   </p>
                 </div>
                 <span class="px-2 py-1 rounded bg-emerald-600/20 text-emerald-400 border border-emerald-500/40 text-[10px] font-bold">
-                  {{ plan.kZonas }} Zonas
+                  {{ plan.kZonas }} Zonas Config.
                 </span>
               </div>
 
-              <div class="space-y-3 max-h-72 overflow-y-auto pr-1 text-xs">
-                @if (plan.porAgregar.length > 0) {
-                  <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-1.5">
-                    <p class="font-bold text-amber-400 text-[11px] uppercase">➕ Unidades / Usuarios por Agregar (Iniciar sesión en móvil)</p>
-                    @for (item of plan.porAgregar; track item.zonaNombre) {
+              @if (avisoCierreSesionOpt(); as baja) {
+                <div class="p-3 rounded-xl bg-red-950/90 border border-red-500 text-red-100 text-xs space-y-2 animate-fade-in">
+                  <div class="flex items-center justify-between">
+                    <span class="font-extrabold text-red-300 uppercase text-[11px]">
+                      🚨 Alerta de Algoritmo: Baja de Unidad en Servicio
+                    </span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded bg-red-600 text-white font-bold">
+                      -{{ baja.uve | number:'1.2-2' }} U.V.E.
+                    </span>
+                  </div>
+                  <p class="text-[11px] leading-snug">
+                    El funcionario <b>{{ baja.conductor }}</b> cerró sesión en la unidad <b>{{ baja.unidad }} ({{ baja.tipo }})</b>{{ baja.zona ? ', dejando descubierta la zona ' + baja.zona : '' }}.
+                    Elija si desea agregar una unidad de reemplazo o continuar optimizando con los recursos actuales:
+                  </p>
+                  <div class="flex items-center gap-2 pt-1">
+                    <button
+                      (click)="continuarOptimizadoConLoQueHay()"
+                      class="flex-1 py-1.5 px-2.5 rounded-lg bg-sigo-surface hover:bg-sigo-surface2 border border-red-400/50 text-red-100 font-bold text-[11px] cursor-pointer"
+                    >
+                      ⚡ Dejar vacío y Optimizar con lo que hay
+                    </button>
+                    <button
+                      (click)="confirmarOptimizadoConDemos()"
+                      class="flex-1 py-1.5 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] cursor-pointer"
+                    >
+                      🤖 Reemplazar con Unidad Demo
+                    </button>
+                  </div>
+                </div>
+              }
+
+              <div class="space-y-3 max-h-80 overflow-y-auto pr-1 text-xs">
+                <!-- 0. Análisis Probabilístico del Catálogo Total de Zonas -->
+                <div class="p-3 rounded-xl bg-indigo-950/50 border border-indigo-500/40 space-y-1.5">
+                  <div class="flex items-center justify-between">
+                    <p class="font-bold text-indigo-300 text-[11px] uppercase">
+                      📊 Análisis Probabilístico del Catálogo ({{ plan.resumenCatalogo.total }} Zonas Registradas)
+                    </p>
+                    <span class="text-[10px] text-indigo-200 font-semibold">
+                      Rotación de {{ plan.kZonas }} zona(s) por ronda
+                    </span>
+                  </div>
+                  <p class="text-[10px] text-indigo-100/90 leading-snug">
+                    Catálogo total: <b>{{ plan.resumenCatalogo.altas }} ALTO</b> ({{ plan.resumenCatalogo.probAlta }}%) ·
+                    <b>{{ plan.resumenCatalogo.medias }} MEDIO</b> ({{ plan.resumenCatalogo.probMedia }}%) ·
+                    <b>{{ plan.resumenCatalogo.bajas }} BAJO</b> ({{ plan.resumenCatalogo.probBaja }}%).
+                    Cupos óptimos por ciclo: <b>{{ plan.resumenCatalogo.cuposTexto }}</b>.
+                  </p>
+                </div>
+
+                <!-- 1. Asignación Optimizada por Zona Configurada -->
+                <div class="p-3 rounded-xl bg-sigo-surface2 border border-sigo-border space-y-1.5">
+                  <div class="flex items-center justify-between">
+                    <p class="font-bold text-emerald-400 text-[11px] uppercase">✓ Distribución Optimizada en las {{ plan.kZonas }} Zonas</p>
+                    <span class="text-[10px] text-sigo-muted">Tolerancia operativa: ±{{ plan.toleranciaUve | number:'1.2-2' }} U.V.E.</span>
+                  </div>
+                  @for (asig of plan.asignadasPorZona; track asig.zonaNombre) {
+                    <div class="flex items-center justify-between text-[11px] text-sigo-text py-1 border-b border-sigo-border/40 last:border-b-0 gap-2">
+                      <div>
+                        <b>{{ asig.zonaNombre }}</b>
+                        <span class="text-[10px] text-sigo-muted ml-1">({{ asig.nivelRiesgo }} · Meta {{ asig.uveRequerida | number:'1.2-2' }} · Máx {{ asig.uveMaxConMargen | number:'1.2-2' }})</span>
+                      </div>
+                      <span class="font-bold text-sigo-accent text-right">{{ asig.resumenUnidades }}</span>
+                    </div>
+                  }
+                </div>
+
+                <!-- 2. Unidades que NO se usarán (Exceden incluso el margen de +0.45 U.V.E.) -->
+                @if (plan.porEliminar.length > 0) {
+                  <div class="p-3 rounded-xl bg-red-500/10 border border-red-500/40 space-y-1.5">
+                    <p class="font-bold text-red-400 text-[11px] uppercase">🗑️ Unidades que NO se usarán (Superan el margen de +{{ plan.toleranciaUve | number:'1.2-2' }} U.V.E. y se retirarán)</p>
+                    @for (u of plan.porEliminar; track u.id) {
                       <div class="flex items-center justify-between text-[11px] text-sigo-text">
-                        <span>{{ item.zonaNombre }} ({{ item.nivelRiesgo }})</span>
-                        <span class="font-bold text-amber-300">{{ item.sugerencia }}</span>
+                        <span><b>{{ u.nombre }}</b> {{ u.isReal ? '(Quedará en Reserva)' : '(Se eliminará del mapa)' }}</span>
+                        <span class="font-bold text-red-300">- {{ u.tipo }} · {{ u.uve | number:'1.2-2' }} U.V.E.</span>
                       </div>
                     }
                   </div>
                 } @else {
-                  <div class="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold">
-                    ✓ No faltan unidades: todas las {{ plan.kZonas }} zonas quedan cubiertas.
+                  <div class="p-2.5 rounded-xl bg-sigo-surface2 border border-sigo-border text-emerald-400 text-[11px] font-semibold">
+                    ✓ Aprovechamiento del 100%: Todos los recursos actuales caben dentro del margen óptimo (±{{ plan.toleranciaUve | number:'1.2-2' }} U.V.E.).
                   </div>
                 }
 
-                @if (plan.porEliminar.length > 0) {
-                  <div class="p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/40 space-y-1.5">
-                    <p class="font-bold text-indigo-300 text-[11px] uppercase">➖ Unidades Sobrantes (Dejar en reserva / Eliminar de ronda)</p>
-                    @for (u of plan.porEliminar; track u.id) {
+                <!-- 3. Unidades que FALTAN por Agregar (Con opción de Demo o Manual con Checklist en Vivo) -->
+                @if (!esperandoIngresoManualOpt() && plan.porAgregar.length > 0) {
+                  <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/40 space-y-2">
+                    <p class="font-bold text-amber-400 text-[11px] uppercase">➕ Unidades que Faltan para Cubrir las {{ plan.kZonas }} Zonas</p>
+                    @for (item of plan.porAgregar; track item.zonaNombre) {
                       <div class="flex items-center justify-between text-[11px] text-sigo-text">
-                        <span>{{ u.nombre }}</span>
-                        <span class="font-bold text-indigo-300">{{ u.tipo }} · {{ u.uve | number:'1.2-2' }} U.V.E.</span>
+                        <span>Zona <b>{{ item.zonaNombre }}</b> ({{ item.nivelRiesgo }} · falta {{ item.deficit | number:'1.2-2' }} U.V.E.)</span>
+                        <span class="font-bold text-amber-300">+ {{ item.sugerencia }}</span>
                       </div>
                     }
+                    <p class="text-[10px] text-amber-200/90 pt-1 border-t border-amber-500/30">
+                      Elige cómo deseas incorporar estas unidades faltantes:
+                    </p>
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                      <button
+                        (click)="confirmarOptimizadoConDemos()"
+                        class="py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold cursor-pointer shadow-sm"
+                      >
+                        🤖 Usar Demo (Agregar y Despachar)
+                      </button>
+                      <button
+                        (click)="iniciarChecklistManualOptimizado()"
+                        class="py-2 px-3 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold cursor-pointer shadow-sm"
+                      >
+                        📱 Agregar Manual (Esperar Login)
+                      </button>
+                    </div>
+                  </div>
+                } @else if (esperandoIngresoManualOpt()) {
+                  @if (estadoChecklistManualOpt(); as chk) {
+                    <div class="p-3.5 rounded-xl bg-amber-950/60 border border-amber-500/60 space-y-2.5">
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <p class="font-bold text-amber-300 text-xs uppercase flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                            Checklist en Vivo · Esperando Inicio de Sesión en App Móvil
+                          </p>
+                          <p class="text-[10px] text-amber-100/80">
+                            Avise a los funcionarios que inicien sesión en su teléfono. El sistema marcará automáticamente cada requisito:
+                          </p>
+                        </div>
+                        <span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-extrabold text-[11px]">
+                          {{ chk.completados }} / {{ chk.items.length }} Listos
+                        </span>
+                      </div>
+
+                      <div class="space-y-1.5">
+                        @for (req of chk.items; track req.id) {
+                          <div
+                            class="p-2 rounded-lg border flex items-center justify-between text-[11px] transition-all"
+                            [ngClass]="req.cumplido ? 'bg-emerald-950/70 border-emerald-500/60 text-emerald-200' : 'bg-sigo-surface border-sigo-border text-sigo-muted'"
+                          >
+                            <div class="flex items-center gap-2">
+                              <span
+                                class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-extrabold"
+                                [ngClass]="req.cumplido ? 'bg-emerald-500 text-white' : 'bg-sigo-surface2 border border-sigo-border text-sigo-muted'"
+                              >
+                                {{ req.cumplido ? '✓' : '⏳' }}
+                              </span>
+                              <div>
+                                <p class="font-bold" [ngClass]="req.cumplido ? 'text-emerald-300' : 'text-sigo-text'">
+                                  Zona {{ req.zonaNombre }} ({{ req.nivelRiesgo }}) — Requiere {{ req.sugerencia }}
+                                </p>
+                                @if (req.cumplido && req.unidadAsignadaNombre) {
+                                  <p class="text-[10px] text-emerald-400 font-semibold">
+                                    ✓ Cubierto por sesión iniciada: {{ req.unidadAsignadaNombre }}
+                                  </p>
+                                } @else {
+                                  <p class="text-[10px] text-amber-300/80">
+                                    Esperando que un funcionario inicie turno con al menos {{ req.deficit | number:'1.2-2' }} U.V.E...
+                                  </p>
+                                }
+                              </div>
+                            </div>
+                            <span
+                              class="px-2 py-0.5 rounded text-[10px] font-bold"
+                              [ngClass]="req.cumplido ? 'bg-emerald-600 text-white' : 'bg-amber-500/20 text-amber-300'"
+                            >
+                              {{ req.cumplido ? 'APROBADO' : 'PENDIENTE' }}
+                            </span>
+                          </div>
+                        }
+                      </div>
+                    </div>
+                  }
+                } @else {
+                  <div class="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-semibold">
+                    ✓ Cobertura completa: No se requiere agregar unidades adicionales para las {{ plan.kZonas }} zonas.
                   </div>
                 }
               </div>
 
               <div class="flex items-center justify-end gap-2 pt-2 border-t border-sigo-border">
                 <button
-                  (click)="confirmandoModo.set(null)"
+                  (click)="cancelarModalOptimizado()"
                   class="px-4 py-2 rounded-lg border border-sigo-border text-sigo-muted hover:text-sigo-text text-xs font-semibold cursor-pointer"
                 >
                   Cancelar
                 </button>
-                <button
-                  (click)="aplicarModoDespacho('OPTIMIZADO')"
-                  class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
-                >
-                  Aceptar y Aplicar Cambios
-                </button>
+                @if (esperandoIngresoManualOpt()) {
+                  <button
+                    (click)="confirmarOptimizadoConDemos()"
+                    class="px-3 py-2 rounded-lg bg-indigo-600/80 hover:bg-indigo-600 text-white text-[11px] font-bold cursor-pointer"
+                    title="Completar lo que aún falte con unidades Demo y despachar ahora"
+                  >
+                    Completar Restantes con Demo
+                  </button>
+                  <button
+                    (click)="finalizarChecklistYDespacharOptimizado()"
+                    [disabled]="!estadoChecklistManualOpt().todoCumplido"
+                    class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold cursor-pointer"
+                  >
+                    ✓ Checklist Completo · Activar y Despachar
+                  </button>
+                } @else if (plan.porAgregar.length === 0) {
+                  <button
+                    (click)="confirmarOptimizadoConDemos()"
+                    class="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Confirmar y Despachar Unidades
+                  </button>
+                }
               </div>
             </div>
           </div>
@@ -1211,11 +1375,18 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       }
 
       const uveRequerida = this.getZoneRequiredUve(z);
-      const uveMaxPermitida = this.getZoneMaxUve(z);
+      const nivelRiesgo = this.getZoneRiskLevel(z);
+      // En zona de riesgo ALTO, si se cumple con la combinación válida RPD (0.80) + MTT (0.45) = 1.25 U.V.E.,
+      // se acepta como cobertura válida (hasta 1.25 U.V.E.) sin marcar "Sobra +0.25"
+      const esComboAltoRpdMtt =
+        nivelRiesgo === 'ALTO' &&
+        unidades.length === 2 &&
+        unidades.some(u => u.tipoMedio === 'RPD') &&
+        unidades.some(u => u.tipoMedio === 'MTT');
+      const uveMaxPermitida = esComboAltoRpdMtt ? 1.25 : this.getZoneMaxUve(z);
       const uveAsignada = Number(unidades.reduce((acc, item) => acc + item.valorUve, 0).toFixed(2));
       const deficitUve = Math.max(0, Number((uveRequerida - uveAsignada).toFixed(2)));
       const excesoUve = Math.max(0, Number((uveAsignada - uveMaxPermitida).toFixed(2)));
-      const nivelRiesgo = this.getZoneRiskLevel(z);
       const score = this.getZoneScore(z);
       const serviciosCombinados = unidades.length > 1;
       // Advertencia de seguridad baja cuando el(los) servicio(s) enviados a la zona no alcanzan el U.V.E. requerido
@@ -1242,13 +1413,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         serviciosCombinados,
         seguridadBaja,
       };
-    }).sort((a, b) => {
-      const aDesbalance = a.deficitUve > 0.001 || a.excesoUve > 0.001 ? 0 : 1;
-      const bDesbalance = b.deficitUve > 0.001 || b.excesoUve > 0.001 ? 0 : 1;
-      if (aDesbalance !== bDesbalance) return aDesbalance - bDesbalance;
-      return b.score - a.score;
-    });
+    }).sort((a, b) => b.score - a.score || a.zona.id - b.zona.id);
   });
+
+  trackByCoberturaZona(_index: number, item: { zona: HotspotZone }): number {
+    return item.zona.id;
+  }
 
   readonly zonasConSeguridadBaja = computed(() =>
     this.coberturaZonasActivas().filter(item => item.seguridadBaja)
@@ -1320,105 +1490,498 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
   private sugerirUnidadPorDeficit(deficit: number): string {
     if (deficit <= 0.001) return '';
-    if (deficit <= 0.20) return '1 Infantería (INF · 0.20 U.V.E.)';
-    if (deficit <= 0.30) return '1 Bicicleta (CB · 0.30 U.V.E.)';
-    if (deficit <= 0.45) return '1 Moto Todo Terreno (MTT · 0.45 U.V.E.)';
-    if (deficit <= 0.80) return '1 Radiopatrulla 2 trip. (RPD · 0.80 U.V.E.)';
-    return '1 Furgón Z / RPT (1.00 U.V.E.)';
+    if (deficit <= 0.30) return 'Infantería a pie o Bicicleta (0.20 - 0.30 U.V.E.)';
+    if (deficit <= 0.80) return 'Patrulla con 1-2 tripulantes o Moto (0.45 - 0.80 U.V.E.)';
+    return 'Furgón Z o Patrulla con 3 tripulantes (1.00 U.V.E.)';
   }
 
-  readonly analisisModoOptimizado = computed(() => {
+  private readonly TOLERANCIA_OPTIMIZADO_UVE = 0.45;
+
+  readonly esperandoIngresoManualOpt = signal<boolean>(false);
+  readonly avisoCierreSesionOpt = signal<{
+    conductor: string;
+    unidad: string;
+    tipo: string;
+    uve: number;
+    zona?: string;
+  } | null>(null);
+  readonly baselineSesionesIdsOpt = signal<Set<number>>(new Set());
+  readonly checklistRequisitosOpt = signal<Array<{
+    id: string;
+    zona: HotspotZone;
+    zonaNombre: string;
+    nivelRiesgo: string;
+    deficit: number;
+    tipoMedio: TipoMedio;
+    valorUve: number;
+    sugerencia: string;
+  }>>([]);
+
+  private sugerirUnidadPorZonaYDeficit(nivelRiesgo: 'ALTO' | 'MEDIO' | 'BAJO', deficit: number, tieneRpd: boolean = false, tieneMtt: boolean = false): {
+    tipoMedio: TipoMedio;
+    valorUve: number;
+    sugerencia: string;
+  } {
+    if (nivelRiesgo === 'ALTO') {
+      // Riesgo ALTO: Furgón Z o Patrulla con 3 tripulantes (1.00), o combinación Patrulla 1-2 tripulantes + Moto
+      if (tieneRpd && !tieneMtt) {
+        return {
+          tipoMedio: 'MTT',
+          valorUve: CONFIG_MEDIOS_UVE.MTT.valorUve,
+          sugerencia: 'Moto (0.45 U.V.E. para complementar Patrulla con 1-2 tripulantes)',
+        };
+      }
+      if (tieneMtt && !tieneRpd) {
+        return {
+          tipoMedio: 'RPD',
+          valorUve: CONFIG_MEDIOS_UVE.RPD.valorUve,
+          sugerencia: 'Patrulla con 1-2 tripulantes (0.80 U.V.E. para complementar Moto)',
+        };
+      }
+      return {
+        tipoMedio: 'FZ',
+        valorUve: CONFIG_MEDIOS_UVE.FZ.valorUve,
+        sugerencia: 'Furgón Z o Patrulla con 3 tripulantes (1.00 U.V.E.)',
+      };
+    }
+
+    if (nivelRiesgo === 'MEDIO') {
+      // Riesgo MEDIO: Patrulla con 1-2 tripulantes o Moto
+      return {
+        tipoMedio: 'MTT',
+        valorUve: CONFIG_MEDIOS_UVE.MTT.valorUve,
+        sugerencia: 'Patrulla con 1-2 tripulantes o Moto (0.45 - 0.80 U.V.E.)',
+      };
+    }
+
+    // Riesgo BAJO: Infantería a pie o Bicicleta
+    if (deficit > 0.201) {
+      return {
+        tipoMedio: 'CB',
+        valorUve: CONFIG_MEDIOS_UVE.CB.valorUve,
+        sugerencia: 'Infantería a pie o Bicicleta (0.20 - 0.30 U.V.E.)',
+      };
+    }
+    return {
+      tipoMedio: 'INF',
+      valorUve: CONFIG_MEDIOS_UVE.INF.valorUve,
+      sugerencia: 'Infantería a pie o Bicicleta (0.20 - 0.30 U.V.E.)',
+    };
+  }
+
+  abrirModalOptimizado(): void {
+    this.avisoCierreSesionOpt.set(null);
+    this.esperandoIngresoManualOpt.set(false);
+    this.checklistRequisitosOpt.set([]);
+    // Sincronizar las zonas activas del mapa con la cantidad configurada en Ajustes
+    this.mapService.syncCycleState();
+    this.confirmandoModo.set('OPTIMIZADO');
+  }
+
+  cancelarModalOptimizado(): void {
+    this.avisoCierreSesionOpt.set(null);
+    this.esperandoIngresoManualOpt.set(false);
+    this.checklistRequisitosOpt.set([]);
+    this.confirmandoModo.set(null);
+  }
+
+  /**
+   * Opción cuando un usuario real cierra sesión y el operador decide NO agregar reemplazo:
+   * cierra la alerta y deja que el sistema redistribuya y optimice automáticamente con las unidades que quedaron.
+   */
+  continuarOptimizadoConLoQueHay(): void {
+    this.avisoCierreSesionOpt.set(null);
+    this.esperandoIngresoManualOpt.set(false);
+    this.checklistRequisitosOpt.set([]);
+    this.confirmandoModo.set(null);
+    this._rebalanceAutoPatrols(false);
+  }
+
+  notificarBajaUnidadReal(unidadCerrada: SesionOperativa): void {
+    const info = this.getUnidadUveInfo(unidadCerrada);
+    const asig = this.getAsignacionActiva(unidadCerrada);
+    const nombreConductor = unidadCerrada.conductor?.nombre_completo || unidadCerrada.rut_conductor || 'Funcionario';
+    const nombreUnidad = unidadCerrada.identificador_unidad || `Móvil #${unidadCerrada.id_sesion}`;
+    const nombreZona = asig?.nombre_zona || undefined;
+
+    this.mostrarToast({
+      type: 'SOS',
+      titulo: `⚠️ Baja en Servicio: ${nombreUnidad}`,
+      subtitulo: `${nombreConductor} cerró sesión (${info.tipoMedio} · -${info.valorUve.toFixed(2)} U.V.E.). Evaluando cobertura...`,
+    });
+
+    // Si estamos en modo AUTO u OPTIMIZADO, verificar si el cierre dejó déficit en las zonas configuradas
+    if (this.isAutoMode()) {
+      setTimeout(() => {
+        const plan = this.analisisModoOptimizado();
+        if (plan.porAgregar.length > 0) {
+          this.avisoCierreSesionOpt.set({
+            conductor: nombreConductor,
+            unidad: nombreUnidad,
+            tipo: info.tipoMedio,
+            uve: info.valorUve,
+            zona: nombreZona,
+          });
+          this.confirmandoModo.set('OPTIMIZADO');
+          this.iniciarChecklistManualOptimizado();
+        } else {
+          this._rebalanceAutoPatrols(false);
+        }
+      }, 150);
+    }
+  }
+
+  iniciarChecklistManualOptimizado(): void {
+    const plan = this.analisisModoOptimizado();
+    const idsActuales = new Set(
+      this.store.unidades()
+        .filter(u => u.estado_operativo !== EstadoOperativo.INACTIVO && !(u as any).fecha_cierre)
+        .map(u => u.id_sesion)
+    );
+    this.baselineSesionesIdsOpt.set(idsActuales);
+    this.checklistRequisitosOpt.set(
+      plan.porAgregar.map((item, idx) => ({
+        id: `req-${idx}-${item.zonaNombre}`,
+        ...item,
+      }))
+    );
+    this.esperandoIngresoManualOpt.set(true);
+  }
+
+  readonly estadoChecklistManualOpt = computed(() => {
+    const reqs = this.checklistRequisitosOpt();
+    const baseline = this.baselineSesionesIdsOpt();
+    // Nuevas sesiones reales que iniciaron sesión después de abrir el checklist
+    const nuevasUnidades = this.store.unidades()
+      .filter(u => u.estado_operativo !== EstadoOperativo.INACTIVO && !(u as any).fecha_cierre && !baseline.has(u.id_sesion))
+      .map(u => {
+        const info = this.getUnidadUveInfo(u);
+        return {
+          id_sesion: u.id_sesion,
+          nombre: `${u.identificador_unidad || 'Móvil #' + u.id_sesion} (${info.tipoMedio} · ${info.valorUve.toFixed(2)} U.V.E.)`,
+          uve: info.valorUve,
+          usada: false,
+        };
+      });
+
+    const items = reqs.map(r => {
+      // Buscar una nueva unidad real iniciada que cubra el requisito (con margen de tolerancia)
+      const match = nuevasUnidades.find(
+        nu => !nu.usada && nu.uve + 0.15 >= r.deficit
+      ) ?? nuevasUnidades.find(nu => !nu.usada);
+
+      if (match) {
+        match.usada = true;
+        return {
+          ...r,
+          cumplido: true,
+          unidadAsignadaNombre: match.nombre,
+        };
+      }
+      return {
+        ...r,
+        cumplido: false,
+        unidadAsignadaNombre: null as string | null,
+      };
+    });
+
+    const completados = items.filter(i => i.cumplido).length;
+    return {
+      items,
+      completados,
+      todoCumplido: items.length > 0 && completados === items.length,
+    };
+  });
+
+  /**
+   * Calcula la distribución óptima de TODAS las unidades (Reales + Demo) sobre las kZonas
+   * configuradas por el operador en Ajustes.
+   *
+   * Nota clave de estabilidad entre rondas:
+   * - En cada rotación de ciclo, `pickZonesForCycle` siempre elige la misma estructura de niveles de riesgo
+   *   según `kZonas` (`poolPriority = [ALTO, MEDIO, BAJO, ALTO, MEDIO]`), por lo que la flota propuesta al
+   *   inicio (Ronda 1) sirve exactamente para TODAS las rotaciones siguientes sin agregar ni eliminar unidades.
+   * - Si el operador decidió operar con menos unidades ("optimizar con lo que hay"), después de asignar las
+   *   compatibilidades exactas por nivel de riesgo, cualquier unidad restante se asigna a las zonas que aún
+   *   estén vacías respetando Mayor U.V.E. -> Mayor Riesgo y Menor U.V.E. -> Menor Riesgo.
+   */
+  private _calcularDistribucionUnificada(modo: 'AUTO' | 'OPTIMIZADO', estrictoInicial: boolean = false) {
     const kZonas = this.settingsService.cantidadZonasRotacion();
-    const zonasObjetivo = (this.mapService.activeZones().length > 0
-      ? [...this.mapService.activeZones()]
-      : [...this.allHotspotZones]
-    )
-      .sort((a, b) => this.getZoneScore(b) - this.getZoneScore(a))
+    // Suscribirse reactivamente al catálogo total de zonas (para recalcular si se agregan o editan zonas nuevas)
+    const catalogoTotal = this.mapService.catalogZonesSignal();
+    const activeMapZones = this.mapService.activeZones();
+    // IMPORTANTE: En Modo Manual o al abrir el modal de confirmación de Auto Optimizado,
+    // evaluar SIEMPRE las K zonas probabilísticas del ciclo (`getTargetZonesForAutoPreview()`)
+    // y no las top-K estáticas de `allHotspotZones`
+    const zonasBase =
+      this.isAutoMode() && activeMapZones.length === kZonas
+        ? [...activeMapZones]
+        : this.mapService.getTargetZonesForAutoPreview();
+
+    // Ordenar las K zonas seleccionadas de mayor a menor riesgo
+    const zonasObjetivo = [...zonasBase]
+      .sort((a, b) => this.getZoneScore(b) - this.getZoneScore(a) || a.id - b.id)
       .slice(0, kZonas);
 
-    const pool = this.patrullasFicticias().map(p => ({
+    const altasCat = catalogoTotal.filter(z => this.getZoneRiskLevel(z) === 'ALTO').length;
+    const mediasCat = catalogoTotal.filter(z => this.getZoneRiskLevel(z) === 'MEDIO').length;
+    const bajasCat = catalogoTotal.filter(z => this.getZoneRiskLevel(z) === 'BAJO').length;
+    const totalCat = Math.max(1, catalogoTotal.length);
+    const slotsOptimos = this.mapService.getOptimalRiskSlotsForCount(kZonas, catalogoTotal);
+    const cAltas = slotsOptimos.filter(s => s === 'ALTO').length;
+    const cMedias = slotsOptimos.filter(s => s === 'MEDIO').length;
+    const cBajas = slotsOptimos.filter(s => s === 'BAJO').length;
+    const resumenCatalogo = {
+      total: catalogoTotal.length,
+      altas: altasCat,
+      medias: mediasCat,
+      bajas: bajasCat,
+      probAlta: Math.round((altasCat / totalCat) * 100),
+      probMedia: Math.round((mediasCat / totalCat) * 100),
+      probBaja: Math.round((bajasCat / totalCat) * 100),
+      cuposTexto: [
+        cAltas > 0 ? `${cAltas} ALTO` : '',
+        cMedias > 0 ? `${cMedias} MEDIO` : '',
+        cBajas > 0 ? `${cBajas} BAJO` : '',
+      ].filter(Boolean).join(' + '),
+    };
+
+    const realesPool = this.store.unidades()
+      .filter(u => u.estado_operativo !== EstadoOperativo.INACTIVO && !(u as any).fecha_cierre)
+      .map(u => {
+        const info = this.getUnidadUveInfo(u);
+        return {
+          id: `real-${u.id_sesion}`,
+          nombre: `${u.identificador_unidad || 'Móvil #' + u.id_sesion}`,
+          tipo: info.tipoMedio,
+          uve: info.valorUve,
+          isReal: true as const,
+          unidadReal: u,
+          patrulla: null as PatrullaFicticia | null,
+          asignada: false,
+        };
+      });
+
+    const demosPool = this.patrullasFicticias().map(p => ({
       id: p.id,
       nombre: p.nombre,
       tipo: this.getFicticiaMedioCode(p),
       uve: this.getFicticiaUve(p),
+      isReal: false as const,
+      unidadReal: null as SesionOperativa | null,
+      patrulla: p,
       asignada: false,
     }));
 
-    const porAgregar: Array<{ zonaNombre: string; nivelRiesgo: string; sugerencia: string }> = [];
+    // Ordenar unidades de MAYOR a MENOR U.V.E. (en empate, priorizar unidad Real)
+    const pool = [...realesPool, ...demosPool].sort((a, b) => {
+      if (Math.abs(b.uve - a.uve) > 0.001) return b.uve - a.uve;
+      if (a.isReal !== b.isReal) return a.isReal ? -1 : 1;
+      return a.id.localeCompare(b.id);
+    });
 
-    for (const z of zonasObjetivo) {
-      const req = this.getZoneRequiredUve(z);
-      let cubierta = 0;
-      while (cubierta + 0.001 < req) {
-        const restantes = pool.filter(x => !x.asignada);
-        if (restantes.length === 0) break;
-        const falta = req - cubierta;
-        const suficientes = restantes.filter(r => r.uve + 0.001 >= falta).sort((a, b) => a.uve - b.uve);
-        const candidata = suficientes.length > 0 ? suficientes[0] : [...restantes].sort((a, b) => b.uve - a.uve)[0];
-        candidata.asignada = true;
-        cubierta = Number((cubierta + candidata.uve).toFixed(2));
+    const tol = this.TOLERANCIA_OPTIMIZADO_UVE; // 0.45 U.V.E.
+
+    const estadoZonas = zonasObjetivo.map(z => {
+      const nivel = this.getZoneRiskLevel(z);
+      return {
+        zona: z,
+        nivel,
+        reqMin: this.getZoneRequiredUve(z),
+        reqMax: this.getZoneMaxUve(z),
+        maxConMargen: Number((this.getZoneMaxUve(z) + tol).toFixed(2)),
+        cubierta: 0,
+        unidades: [] as typeof pool,
+      };
+    });
+
+    const reqTotalZonas = Number(
+      estadoZonas.reduce((acc, ez) => acc + ez.reqMin, 0).toFixed(2)
+    );
+
+    // ── 1. Asignar ZONAS DE RIESGO ALTO (Solo FZ / RPT [1.00], o bien RPD [0.80] + MTT [0.45]) ──
+    for (const ez of estadoZonas.filter(x => x.nivel === 'ALTO')) {
+      const restantes = pool.filter(x => !x.asignada);
+      const unidadAltaExacta = restantes.find(r => r.tipo === 'FZ' || r.tipo === 'RPT');
+      if (unidadAltaExacta) {
+        unidadAltaExacta.asignada = true;
+        ez.unidades.push(unidadAltaExacta);
+        ez.cubierta = Number(unidadAltaExacta.uve.toFixed(2));
+        continue;
       }
-      if (cubierta + 0.001 < req) {
-        const deficit = Number((req - cubierta).toFixed(2));
-        porAgregar.push({
-          zonaNombre: z.name,
-          nivelRiesgo: this.getZoneRiskLevel(z),
-          sugerencia: this.sugerirUnidadPorDeficit(deficit),
-        });
+
+      // Complemento RPD (0.80) + MTT (0.45) = 1.25 U.V.E.
+      const unidadRpd = restantes.find(r => r.tipo === 'RPD');
+      if (unidadRpd) {
+        unidadRpd.asignada = true;
+        ez.unidades.push(unidadRpd);
+        ez.cubierta = Number((ez.cubierta + unidadRpd.uve).toFixed(2));
+
+        const unidadMtt = pool.find(r => !r.asignada && r.tipo === 'MTT');
+        if (unidadMtt) {
+          unidadMtt.asignada = true;
+          ez.unidades.push(unidadMtt);
+          ez.cubierta = Number((ez.cubierta + unidadMtt.uve).toFixed(2));
+        }
+        continue;
+      }
+
+      const unidadMttSola = restantes.find(r => r.tipo === 'MTT');
+      if (unidadMttSola) {
+        unidadMttSola.asignada = true;
+        ez.unidades.push(unidadMttSola);
+        ez.cubierta = Number(unidadMttSola.uve.toFixed(2));
       }
     }
 
-    const porEliminar = pool.filter(x => !x.asignada);
-    return { kZonas, porAgregar, porEliminar };
+    // ── 2. Asignar ZONAS DE RIESGO MEDIO (Solo MTT [0.45] o RPD [0.80]; NUNCA CB ni INF) ──
+    for (const ez of estadoZonas.filter(x => x.nivel === 'MEDIO')) {
+      const restantes = pool.filter(x => !x.asignada);
+      const candidataMedia = restantes.find(r => r.tipo === 'RPD' || r.tipo === 'MTT');
+      if (candidataMedia) {
+        candidataMedia.asignada = true;
+        ez.unidades.push(candidataMedia);
+        ez.cubierta = Number(candidataMedia.uve.toFixed(2));
+      }
+    }
+
+    // ── 3. Asignar ZONAS DE RIESGO BAJO (CB [0.30] o INF [0.20]) ──
+    for (const ez of estadoZonas.filter(x => x.nivel === 'BAJO')) {
+      const restantes = pool.filter(x => !x.asignada);
+      const candidataBaja = restantes.find(r => r.tipo === 'CB' || r.tipo === 'INF');
+      if (candidataBaja) {
+        candidataBaja.asignada = true;
+        ez.unidades.push(candidataBaja);
+        ez.cubierta = Number(candidataBaja.uve.toFixed(2));
+      }
+    }
+
+    // ── 4. En operación continua (cuando ya comenzó la ronda y el sistema trabaja solo con lo que hay):
+    // Si alguna zona quedó vacía y todavía hay unidades sin asignar, utilizar lo que hay respetando la jerarquía
+    // (sin meter CB/INF en MEDIO ni ALTO) para que ninguna unidad quede en espera.
+    if (!estrictoInicial) {
+      for (const ez of estadoZonas.filter(x => x.unidades.length === 0)) {
+        const restantes = pool.filter(x => !x.asignada);
+        if (restantes.length === 0) break;
+        const compatibles = ez.nivel === 'BAJO'
+          ? restantes
+          : restantes.filter(r => r.tipo !== 'CB' && r.tipo !== 'INF');
+        // Si es zona BAJA tomar la de menor U.V.E.; si es MAYOR tomar la de mayor U.V.E.
+        const elegida = ez.nivel === 'BAJO'
+          ? compatibles[compatibles.length - 1]
+          : compatibles[0];
+        if (elegida) {
+          elegida.asignada = true;
+          ez.unidades.push(elegida);
+          ez.cubierta = Number(elegida.uve.toFixed(2));
+        }
+      }
+    }
+
+    const totalAsignado = Number(
+      estadoZonas.reduce((acc, ez) => acc + ez.cubierta, 0).toFixed(2)
+    );
+
+    return {
+      kZonas,
+      toleranciaUve: tol,
+      reqTotalZonas,
+      totalAsignado,
+      estadoZonas,
+      pool,
+      resumenCatalogo,
+    };
+  }
+
+  readonly analisisModoOptimizado = computed(() => {
+    const calc = this._calcularDistribucionUnificada('OPTIMIZADO', true);
+    const porAgregar: Array<{
+      zona: HotspotZone;
+      zonaNombre: string;
+      nivelRiesgo: string;
+      deficit: number;
+      tipoMedio: TipoMedio;
+      valorUve: number;
+      sugerencia: string;
+    }> = [];
+
+    const asignadasPorZona: Array<{
+      zonaNombre: string;
+      nivelRiesgo: string;
+      uveRequerida: number;
+      uveMaxConMargen: number;
+      resumenUnidades: string;
+    }> = [];
+
+    for (const ez of calc.estadoZonas) {
+      const nombres = ez.unidades.map(u => `${u.nombre} (${u.uve.toFixed(2)})`);
+      const deficitZona = Math.max(0, Number((ez.reqMin - ez.cubierta).toFixed(2)));
+      const tieneRpd = ez.unidades.some(u => u.tipo === 'RPD');
+      const tieneMtt = ez.unidades.some(u => u.tipo === 'MTT');
+
+      // En ALTO: si tiene RPD (0.80) sin MTT, falta complementar con MTT (0.45); si está vacía, falta FZ/RPT (1.00).
+      // En MEDIO: si está vacía, falta MTT (0.45) o RPD (0.80).
+      // En BAJO: si está vacía, falta INF (0.20) o CB (0.30).
+      if (deficitZona > 0.001) {
+        const rec = this.sugerirUnidadPorZonaYDeficit(ez.nivel, deficitZona, tieneRpd, tieneMtt);
+        porAgregar.push({
+          zona: ez.zona,
+          zonaNombre: ez.zona.name,
+          nivelRiesgo: ez.nivel,
+          deficit: deficitZona,
+          tipoMedio: rec.tipoMedio,
+          valorUve: rec.valorUve,
+          sugerencia: rec.sugerencia,
+        });
+        nombres.push(`+ Falta ${rec.tipoMedio} (${rec.valorUve.toFixed(2)})`);
+      }
+
+      asignadasPorZona.push({
+        zonaNombre: ez.zona.name,
+        nivelRiesgo: ez.nivel,
+        uveRequerida: ez.reqMin,
+        uveMaxConMargen: ez.maxConMargen,
+        resumenUnidades: nombres.join(' + ') || 'Sin unidad compatible',
+      });
+    }
+
+    const porEliminar = calc.pool.filter(x => !x.asignada);
+    return {
+      kZonas: calc.kZonas,
+      toleranciaUve: calc.toleranciaUve,
+      resumenCatalogo: calc.resumenCatalogo,
+      asignadasPorZona,
+      porAgregar,
+      porEliminar,
+    };
   });
 
   readonly propuestaOptimaAuto = computed(() => {
-    const zonas = [...this.mapService.activeZones()].sort(
-      (a, b) => this.getZoneScore(b) - this.getZoneScore(a)
-    );
-    const pool = this.patrullasFicticias().map(p => ({
-      patrulla: p,
-      uve: this.getFicticiaUve(p),
-      asignada: false,
-    }));
-
-    const asignaciones: Array<{ zona: HotspotZone; unidades: typeof pool; uveRequerida: number; uveCubierta: number }> = [];
+    const calc = this._calcularDistribucionUnificada(this.modoDespacho() === 'AUTO' ? 'AUTO' : 'OPTIMIZADO');
     let uveFaltante = 0;
+    let primeraRecomendacion = '';
 
-    for (const z of zonas) {
-      const req = this.getZoneRequiredUve(z);
-      let cubierta = 0;
-      const elegidas: typeof pool = [];
-
-      // Buscar primero la unidad disponible que cubra lo requerido con menor desperdicio,
-      // o acumular unidades si ninguna individual alcanza
-      while (cubierta + 0.001 < req) {
-        const restantes = pool.filter(item => !item.asignada);
-        if (restantes.length === 0) break;
-
-        const falta = req - cubierta;
-        // Preferir la menor unidad que cubra >= falta; si no hay, tomar la mayor disponible
-        const suficientes = restantes
-          .filter(r => r.uve + 0.001 >= falta)
-          .sort((a, b) => a.uve - b.uve);
-        const candidata = suficientes.length > 0
-          ? suficientes[0]
-          : [...restantes].sort((a, b) => b.uve - a.uve)[0];
-
-        candidata.asignada = true;
-        elegidas.push(candidata);
-        cubierta = Number((cubierta + candidata.uve).toFixed(2));
+    const asignaciones = calc.estadoZonas.map(ez => {
+      const def = Math.max(0, Number((ez.reqMin - ez.cubierta).toFixed(2)));
+      if (def > 0.001) {
+        uveFaltante = Number((uveFaltante + def).toFixed(2));
+        if (!primeraRecomendacion) {
+          const tieneRpd = ez.unidades.some(u => u.tipo === 'RPD');
+          const tieneMtt = ez.unidades.some(u => u.tipo === 'MTT');
+          primeraRecomendacion = this.sugerirUnidadPorZonaYDeficit(ez.nivel, def, tieneRpd, tieneMtt).sugerencia;
+        }
       }
+      return {
+        zona: ez.zona,
+        unidades: ez.unidades,
+        uveRequerida: ez.reqMin,
+        uveCubierta: ez.cubierta,
+      };
+    });
 
-      if (cubierta + 0.001 < req) {
-        uveFaltante = Number((uveFaltante + (req - cubierta)).toFixed(2));
-      }
-      asignaciones.push({ zona: z, unidades: elegidas, uveRequerida: req, uveCubierta: cubierta });
-    }
-
-    const sobrantes = pool.filter(item => !item.asignada).map(item => item.patrulla);
+    const sobrantes = calc.pool.filter(item => !item.asignada);
     const uveSobrante = Number(
-      sobrantes.reduce((acc, p) => acc + this.getFicticiaUve(p), 0).toFixed(2)
+      sobrantes.reduce((acc, item) => acc + item.uve, 0).toFixed(2)
     );
 
     return {
@@ -1426,53 +1989,195 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       sobrantes,
       uveSobrante,
       uveFaltante,
-      recomendacionUnidad: this.sugerirUnidadPorDeficit(uveFaltante),
+      recomendacionUnidad: primeraRecomendacion,
     };
   });
 
-  aplicarModoDespacho(modo: 'AUTO' | 'OPTIMIZADO'): void {
-    const prop = this.propuestaOptimaAuto();
-    const mapaAsignacion = new Map<string, HotspotZone>();
-    for (const a of prop.asignaciones) {
-      for (const u of a.unidades) {
-        mapaAsignacion.set(u.patrulla.id, a.zona);
+  private _lastAutoRealDispatchMap = new Map<number, number>();
+
+  private async _autoDispatchRealUnits(asignacionesReales: Map<number, HotspotZone>, modo: 'AUTO' | 'OPTIMIZADO'): Promise<void> {
+    const unidadesActivas = this.store.unidades().filter(
+      u => u.estado_operativo !== EstadoOperativo.INACTIVO && !(u as any).fecha_cierre
+    );
+
+    let huboCambios = false;
+
+    for (const u of unidadesActivas) {
+      if (u.estado_operativo === EstadoOperativo.OCUPADO_EMERGENCIA) continue;
+
+      const targetZone = asignacionesReales.get(u.id_sesion);
+      const asigActual = this.getAsignacionActiva(u);
+      const matchedZoneActual = asigActual ? findMatchingHotspotZone(asigActual) : null;
+
+      if (targetZone) {
+        if (matchedZoneActual?.id === targetZone.id || this._lastAutoRealDispatchMap.get(u.id_sesion) === targetZone.id) {
+          continue;
+        }
+        this._lastAutoRealDispatchMap.set(u.id_sesion, targetZone.id);
+        try {
+          await this.apiService.despacharManual({
+            id_sesion: u.id_sesion,
+            lat: targetZone.lat,
+            lng: targetZone.lng,
+            radio_m: targetZone.radio_m || 160,
+            id_zona: targetZone.id,
+            nombre_zona: targetZone.name,
+            instrucciones: `Despacho ${modo === 'OPTIMIZADO' ? 'Auto-Optimizado' : 'Automático'} U.V.E. hacia ${targetZone.name} (${targetZone.address}).`,
+          });
+          this.iniciarCuentaRegresivaDespacho(u.id_sesion);
+          huboCambios = true;
+        } catch (err) {
+          console.warn('[AutoDispatchReal] Error despachando unidad real:', err);
+        }
+      } else if (modo === 'OPTIMIZADO' && asigActual && asigActual.origen_asignacion !== 'REFUERZO_SOS') {
+        this._lastAutoRealDispatchMap.delete(u.id_sesion);
+        try {
+          await this.apiService.cancelarAsignacion(asigActual.id_asignacion, u.id_sesion);
+          huboCambios = true;
+        } catch { }
       }
     }
 
-    // En modo AUTO (no optimizado), también asignamos las unidades sobrantes a las zonas de mayor riesgo
-    if (modo === 'AUTO' && prop.asignaciones.length > 0) {
-      prop.sobrantes.forEach((p, idx) => {
-        const zonaDestino = prop.asignaciones[idx % prop.asignaciones.length].zona;
-        mapaAsignacion.set(p.id, zonaDestino);
-      });
+    if (huboCambios) {
+      const [freshAsigs, freshSesiones] = await Promise.all([
+        this.apiService.getAsignacionesActivas().catch(() => []),
+        this.apiService.getSesionesActivas().catch(() => []),
+      ]);
+      if (freshAsigs) {
+        this.store.setAsignaciones(freshAsigs);
+        freshAsigs.forEach(a => this.mapService.upsertPolygon(a));
+      }
+      if (freshSesiones && freshSesiones.length > 0) {
+        this.store.setUnidades(freshSesiones);
+        freshSesiones.forEach(s => this.mapService.upsertUnitMarker(s));
+      }
+      this.updateAllDispatchCountdowns();
     }
+  }
+
+  private _eliminarUnidadesSobrantesOptimizado(): void {
+    const plan = this.analisisModoOptimizado();
+    for (const sobrante of plan.porEliminar) {
+      if (!sobrante.isReal && sobrante.patrulla) {
+        this._clearTimers(sobrante.patrulla.id);
+        this.mapService.removeFicticiaMarker(sobrante.patrulla.id);
+        this.patrullasFicticias.update(list => list.filter(x => x.id !== sobrante.patrulla!.id));
+        fetch(`${environment.apiBaseUrl}/tactico/patrullas/${encodeURIComponent(sobrante.patrulla.id)}`, {
+          method: 'DELETE',
+        }).catch(() => { });
+        if (this.patrullaFicticiaSeleccionada()?.id === sobrante.patrulla.id) {
+          this.patrullaFicticiaSeleccionada.set(null);
+        }
+      } else if (sobrante.isReal && sobrante.unidadReal) {
+        const asig = this.getAsignacionActiva(sobrante.unidadReal);
+        if (asig) {
+          this.apiService.cancelarAsignacion(asig.id_asignacion, sobrante.unidadReal.id_sesion).catch(() => { });
+        }
+      }
+    }
+  }
+
+  /**
+   * Opción 1: Usar Demo -> Elimina sobrantes, crea unidades Demo para lo que falta
+   * y las despacha de inmediato a su zona (nunca quedan esperando en Disponible).
+   */
+  confirmarOptimizadoConDemos(): void {
+    this._eliminarUnidadesSobrantesOptimizado();
+    const plan = this.analisisModoOptimizado();
+    const nuevasAsignacionesDirectas = new Map<string, HotspotZone>();
+
+    plan.porAgregar.forEach((faltante, idx) => {
+      const medio = faltante.tipoMedio;
+      const cfg = CONFIG_MEDIOS_UVE[medio];
+      const tipoCompat =
+        medio === 'FZ'
+          ? 'FURGON_Z'
+          : medio === 'MTT'
+            ? 'MOTO'
+            : medio === 'CB'
+              ? 'BICICLETA'
+              : medio === 'INF'
+                ? 'INFANTERIA'
+                : 'PATRULLA';
+      const dotacionTotal = medio === 'RPT' ? 3 : medio === 'FZ' || medio === 'RPD' ? 2 : 1;
+      const lat = -33.0235 + idx * 0.002;
+      const lng = -71.5510 + idx * 0.002;
+
+      const nuevaPatrulla: PatrullaFicticia = {
+        id: crypto.randomUUID(),
+        nombre: `Móvil ${medio}`,
+        tipo: tipoCompat,
+        tipo_medio: medio,
+        valor_uve: cfg.valorUve,
+        dotacion_total: dotacionTotal,
+        estado: 'EN_RUTA',
+        destinoZone: faltante.zona,
+        isManual: false,
+        lat,
+        lng,
+      };
+
+      this.mapService.addFicticiaMarker(
+        nuevaPatrulla.id,
+        nuevaPatrulla.lat,
+        nuevaPatrulla.lng,
+        medio,
+        'EN_RUTA',
+        cfg.valorUve,
+        dotacionTotal
+      );
+      this.patrullasFicticias.update(list => [...list, nuevaPatrulla]);
+      nuevasAsignacionesDirectas.set(nuevaPatrulla.id, faltante.zona);
+
+      fetch(`${environment.apiBaseUrl}/tactico/patrullas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: nuevaPatrulla.id,
+          nombre: nuevaPatrulla.nombre,
+          tipo_medio: medio,
+          valor_uve: cfg.valorUve,
+          dotacion_total: dotacionTotal,
+          estado: 'EN_RUTA',
+          lat: nuevaPatrulla.lat,
+          lng: nuevaPatrulla.lng,
+          destino_zona_id: faltante.zona.id,
+          destino_zona_json: faltante.zona,
+          is_manual: false,
+          angulo_orbita: 0,
+        }),
+      }).catch(() => { });
+    });
+
+    this.avisoCierreSesionOpt.set(null);
+    this.esperandoIngresoManualOpt.set(false);
+    this.checklistRequisitosOpt.set([]);
+    this.aplicarModoDespacho('OPTIMIZADO', nuevasAsignacionesDirectas);
+  }
+
+  /**
+   * Opción 2: Cuando el checklist en vivo de usuarios reales que iniciaron sesión se completa,
+   * elimina sobrantes y despacha a todas las unidades (incluyendo las recién iniciadas).
+   */
+  finalizarChecklistYDespacharOptimizado(): void {
+    this._eliminarUnidadesSobrantesOptimizado();
+    this.avisoCierreSesionOpt.set(null);
+    this.esperandoIngresoManualOpt.set(false);
+    this.checklistRequisitosOpt.set([]);
+    this.aplicarModoDespacho('OPTIMIZADO');
+  }
+
+  aplicarModoDespacho(modo: 'AUTO' | 'OPTIMIZADO', forcedDemoTargets?: Map<string, HotspotZone>): void {
+    this.confirmandoModo.set(null);
+    this._lastAutoRealDispatchMap.clear();
+    this._setModo(modo);
 
     this.store.patrullasFicticias.update(list =>
-      list.map(p => {
-        const destino = mapaAsignacion.get(p.id);
-        if (destino) {
-          return {
-            ...p,
-            estado: 'PATRULLANDO' as const,
-            destinoZone: destino,
-            lat: destino.lat,
-            lng: destino.lng,
-            isManual: false,
-          };
-        }
-        return {
-          ...p,
-          estado: 'DISPONIBLE' as const,
-          destinoZone: undefined,
-          isManual: false,
-        };
-      })
+      list.map(p => (p.destinoZone?.id === 9999 ? p : { ...p, isManual: false }))
     );
 
-    this.confirmandoModo.set(null);
-    this._setModo(modo);
-    this.mapService.syncCycleState();
-    this._rebalanceAutoPatrols(true);
+    const previewZones = this.mapService.getTargetZonesForAutoPreview();
+
     fetch(`${environment.apiBaseUrl}/tactico/modo`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1480,24 +2185,94 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         modo_despacho: modo,
         k_zonas: this.settingsService.cantidadZonasRotacion(),
         intervalo_rotacion_seg: this.settingsService.intervaloRotacionSeg(),
+        tiempo_llegada_min: this.settingsService.tiempoLlegadaMin(),
+        zonas_activas_ids: previewZones.map(z => z.id),
       }),
-    }).catch(() => {});
+    })
+      .then(() => this._pullTacticoStateFromBackend())
+      .catch(() => { });
+
+    this._rebalanceAutoPatrols(false, forcedDemoTargets);
   }
 
-  desactivarModoAutomatico(): void {
+  async desactivarModoAutomatico(): Promise<void> {
     this.confirmandoModo.set(null);
+    this.avisoCierreSesionOpt.set(null);
+    this.esperandoIngresoManualOpt.set(false);
+    this.checklistRequisitosOpt.set([]);
+    this._lastAutoRealDispatchMap.clear();
     this._setModo('MANUAL');
+
+    // 1. Detener y dejar Disponibles las patrullas demo
     this.patrullasFicticias().forEach(p => {
       this._clearTimers(p.id);
       this.mapService.updateFicticiaMarkerColor(p.id, 'DISPONIBLE');
     });
     this.store.resetDemoPatrolsToAvailable();
+
+    // 2. Finalizar automáticamente las misiones activas de TODAS las unidades reales en la base de datos
+    //    para que en la App Móvil desaparezca de inmediato el destino y queden Disponibles
+    const unidadesReales = this.store.unidades();
+    const promesasCancelacion: Promise<any>[] = [];
+
+    for (const u of unidadesReales) {
+      const asig = this.getAsignacionActiva(u) || u.asignacion_activa;
+      const tieneMision =
+        asig ||
+        u.estado_operativo === EstadoOperativo.EN_RUTA_HOTSPOT ||
+        u.estado_operativo === EstadoOperativo.PATRULLANDO_ZONA;
+
+      if (tieneMision) {
+        const idAsig = asig?.id_asignacion ?? null;
+        promesasCancelacion.push(
+          this.apiService.cancelarAsignacion(idAsig, u.id_sesion).catch(() => { })
+        );
+        if (asig) {
+          this._releaseMissionZone(asig);
+        }
+      }
+    }
+
+    // Limpiar inmediatamente el estado local en el Dashboard y en el Mapa
+    this.store.asignaciones.set([]);
+    this.dispatchCountdown.set(new Map());
+    this.store.unidades.update(lista =>
+      lista.map(u => {
+        const updated: SesionOperativa = {
+          ...u,
+          asignacion_activa: null as any,
+          estado_operativo:
+            u.estado_operativo === EstadoOperativo.OCUPADO_EMERGENCIA
+              ? u.estado_operativo
+              : EstadoOperativo.DISPONIBLE,
+        };
+        this.mapService.upsertUnitMarker(updated);
+        return updated;
+      })
+    );
+
+    this.mapService.clearManualActiveZones();
     this.mapService.syncCycleState();
+
     fetch(`${environment.apiBaseUrl}/tactico/modo`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ modo_despacho: 'MANUAL' }),
-    }).catch(() => {});
+    }).catch(() => { });
+
+    if (promesasCancelacion.length > 0) {
+      await Promise.all(promesasCancelacion);
+      const [freshAsigs, freshSesiones] = await Promise.all([
+        this.apiService.getAsignacionesActivas().catch(() => []),
+        this.apiService.getSesionesActivas().catch(() => []),
+      ]);
+      this.store.setAsignaciones(freshAsigs);
+      if (freshSesiones.length > 0) {
+        this.store.setUnidades(freshSesiones);
+        freshSesiones.forEach(s => this.mapService.upsertUnitMarker(s));
+      }
+      this.reconcileActiveManualZones();
+    }
   }
 
   terminarRondaFicticia(patrolId: string): void {
@@ -1521,7 +2296,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.mapService.syncCycleState();
     fetch(`${environment.apiBaseUrl}/tactico/patrullas/${encodeURIComponent(patrolId)}/terminar`, {
       method: 'POST',
-    }).catch(() => {});
+    }).catch(() => { });
   }
 
   async dispararRotacionZonas(k: number): Promise<void> {
@@ -1591,12 +2366,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   constructor() {
     effect(() => {
       const isAuto = this.modoDespacho() !== 'MANUAL';
-      const zones = this.mapService.activeZones();
       untracked(() => {
-        const patrullas = this.patrullasFicticias();
-
         if (!isAuto) {
-          // En Modo Manual: todas las patrullas demo automáticas deben detenerse y quedar DISPONIBLES
+          const patrullas = this.patrullasFicticias();
           if (patrullas.length > 0) {
             patrullas.forEach(p => {
               if (!p.isManual && (p.estado !== 'DISPONIBLE' || p.destinoZone)) {
@@ -1606,53 +2378,65 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               }
             });
           }
-          return;
         }
-
-        // En Modo Automático: asignar patrullas demo a las zonas activas del bucle según prioridad y U.V.E.
-        this._rebalanceAutoPatrols();
-      });
-    }, { allowSignalWrites: true });
-
-    // Cuando cambien las unidades reales o sus misiones, reequilibrar cobertura U.V.E. y prioridades de zonas
-    effect(() => {
-      const unidades = this.store.unidades();
-      const asignaciones = this.store.asignaciones();
-      untracked(() => {
-        if (!this.isAutoMode()) return;
-        this._rebalanceAutoPatrols();
       });
     }, { allowSignalWrites: true });
   }
 
-  private _rebalanceAutoPatrols(snapImmediately: boolean = false): void {
+  private _rebalanceAutoPatrols(snapImmediately: boolean = false, forcedDemoTargets?: Map<string, HotspotZone>): void {
     if (!this.isAutoMode()) return;
     const zones = this.mapService.activeZones();
-    const patrullas = this.patrullasFicticias();
-    if (zones.length === 0 || patrullas.length === 0) return;
+    if (zones.length === 0) return;
 
-    const autoPatrols = patrullas.filter(p => !p.isManual || p.destinoZone?.id !== 9999 && !p.isManual);
-    if (autoPatrols.length === 0) return;
+    const modo = this.modoDespacho() as 'AUTO' | 'OPTIMIZADO';
+    // IMPORTANTE: En las rotaciones de ciclo NO se agregan ni se eliminan unidades automáticamente.
+    // La flota se fija únicamente en la Primera Ronda cuando el operador confirma el Modo Optimizado
+    // (o cuando decide reemplazar una baja por cierre de sesión), y a partir de ahí el sistema
+    // trabaja solo manteniendo exactamente las mismas unidades en todas las rotaciones.
+    const prop = this.propuestaOptimaAuto();
 
-    const assignments = this._assignZones(autoPatrols, zones);
-    autoPatrols.forEach(p => {
-      const zone = assignments.get(p.id);
-      if (!zone) return;
+    const demoAssignments = new Map<string, HotspotZone>();
+    const realAssignments = new Map<number, HotspotZone>();
 
-      const changedZone = !p.destinoZone || p.destinoZone.id !== zone.id;
-      if (snapImmediately && (changedZone || p.estado === 'PATRULLANDO')) {
-        this._clearTimers(p.id);
-        this._patch(p.id, { lat: zone.lat, lng: zone.lng, estado: 'PATRULLANDO', destinoZone: zone });
-        this.mapService.updateFicticiaMarkerColor(p.id, 'PATRULLANDO');
-        this.mapService.moveFicticiaMarker(p.id, zone.lat, zone.lng);
-        this._iniciarRondaPatrullaje(p.id, zone);
-      } else if (changedZone || p.estado === 'DISPONIBLE') {
-        this._dispatchToZone(p, zone);
-      } else {
-        // Actualizar metadatos de la zona destino (ej. scoreGravedad sincronizado)
-        this._patch(p.id, { destinoZone: zone });
+    for (const a of prop.asignaciones) {
+      for (const u of a.unidades) {
+        if (u.isReal && u.unidadReal) {
+          realAssignments.set(u.unidadReal.id_sesion, a.zona);
+        } else if (!u.isReal && u.patrulla) {
+          demoAssignments.set(u.patrulla.id, a.zona);
+        }
       }
-    });
+    }
+
+    // Garantizar que cualquier unidad recién agregada al activar el modo OPTIMIZADO vaya directo a su zona objetivo
+    if (forcedDemoTargets) {
+      for (const [id, z] of forcedDemoTargets.entries()) {
+        demoAssignments.set(id, z);
+      }
+    }
+
+    // Distribuir cualquier unidad restante hacia las zonas compatibles sin dejarla quieta en Disponible
+    if (prop.asignaciones.length > 0) {
+      prop.sobrantes.forEach((item, idx) => {
+        const esBaja = item.tipo === 'CB' || item.tipo === 'INF';
+        const asigCompatible = esBaja
+          ? (prop.asignaciones.find(a => this.getZoneRiskLevel(a.zona) === 'BAJO') ?? prop.asignaciones[prop.asignaciones.length - 1])
+          : prop.asignaciones[idx % prop.asignaciones.length];
+        const zonaDestino = asigCompatible.zona;
+        if (item.isReal && item.unidadReal) {
+          if (!realAssignments.has(item.unidadReal.id_sesion)) {
+            realAssignments.set(item.unidadReal.id_sesion, zonaDestino);
+          }
+        } else if (!item.isReal && item.patrulla) {
+          if (!demoAssignments.has(item.patrulla.id)) {
+            demoAssignments.set(item.patrulla.id, zonaDestino);
+          }
+        }
+      });
+    }
+
+    // El despacho automático de unidades reales ahora se ejecuta 100% en el Motor Táctico 24/7 del servidor
+    // para evitar que dos pestañas o dispositivos distintos compitan enviando despachos duplicados.
   }
 
   ngOnInit(): void { }
@@ -1670,39 +2454,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       if (p) this.selectPatrullaFicticia(p);
     };
 
-    // Restaurar el modo persistido (rotación activa solo en AUTO / OPTIMIZADO)
-    const isAuto = this.isAutoMode();
-    this.mapService.autoRotationEnabled.set(isAuto);
-    this.mapService.syncCycleState();
-    if (isAuto) {
-      this.patrullasFicticias.update(list =>
-        list.map(p => (p.destinoZone?.id === 9999 ? p : { ...p, isManual: false }))
-      );
-    }
-
-    // Crear marcadores en el mapa para las patrullas demo
+    // Re-dibujar inmediatamente las unidades ya cacheadas en el store al volver desde otra pestaña
+    this.store.unidades().forEach(s => this.mapService.upsertUnitMarker(s));
+    this.store.asignaciones().forEach(a => this.mapService.upsertPolygon(a));
     this.patrullasFicticias().forEach(p => {
-      if (!isAuto && !p.isManual) {
-        p.estado = 'DISPONIBLE';
-        p.destinoZone = undefined;
-      }
-      const code = this.getFicticiaMedioCode(p);
-      const uve = this.getFicticiaUve(p);
-      this.mapService.addFicticiaMarker(p.id, p.lat, p.lng, code, p.estado, uve, p.dotacion_total ?? (code === 'RPT' ? 3 : code === 'FZ' || code === 'RPD' ? 2 : 1));
-      if (!isAuto && p.isManual && p.destinoZone) {
-        this.mapService.ensureActiveZone(p.destinoZone);
-        if (p.estado === 'PATRULLANDO') {
-          this._iniciarRondaPatrullaje(p.id, p.destinoZone);
-        } else if (p.estado === 'EN_RUTA') {
-          this._dispatchToZone(p, p.destinoZone);
-        }
-      }
+      const medio = this.getFicticiaMedioCode(p);
+      this.mapService.upsertFicticiaMarker(p.id, p.lat, p.lng, medio, p.estado, this.getFicticiaUve(p), p.dotacion_total ?? 2);
     });
 
-    // Asignar inmediatamente según prioridad de riesgo y U.V.E.
-    if (isAuto) {
-      this._rebalanceAutoPatrols(true);
-    }
+    // Sincronizar inmediatamente desde el Motor Táctico 24/7 del servidor (única fuente de verdad para todos los dispositivos y pestañas)
+    await this._pullTacticoStateFromBackend();
+    this.tacticalSyncTimer = setInterval(() => {
+      this._pullTacticoStateFromBackend();
+    }, 1000);
 
     const [sesiones, hotspots, asignaciones, alertas, posiciones, zonas] = await Promise.all([
       this.apiService.getSesionesActivas().catch(() => []),
@@ -1791,8 +2555,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         }
       } else if (event.eventType === 'UPDATE') {
         if (row.fecha_cierre) {
+          const unidadCerrada = this.store.unidades().find(u => u.id_sesion === idSesion);
           this.store.unidades.update(lista => lista.filter(u => u.id_sesion !== idSesion));
           this.mapService.removeUnitMarkerById?.(idSesion);
+          if (unidadCerrada) {
+            this.notificarBajaUnidadReal(unidadCerrada);
+          }
         } else {
           this.store.updateEstadoUnidad(idSesion, row.estado_operativo);
           const existing = this.store.unidades().find(u => u.id_sesion === idSesion);
@@ -1933,32 +2701,31 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
     this.realtimeSubs.push(sesionSub, telemetriaSub, alertaSub, mensajeSub, asignacionSub);
 
-    // Polling de sincronización periódica
+    // Polling de sincronización periódica (sin duplicar getZonas ni refreshPositions, ni sobrescribir asignaciones durante una transición vacía)
     const refreshDashboard = async () => {
       try {
-        const [sesiones, posiciones, zonas, asignaciones] = await Promise.all([
+        const [sesiones, posiciones, asignaciones] = await Promise.all([
           this.apiService.getSesionesActivas().catch(() => null),
           this.supabase.getUltimasPosiciones().catch(() => []),
-          this.apiService.getZonas().catch(() => []),
-          this.apiService.getAsignacionesActivas().catch(() => []),
+          this.apiService.getAsignacionesActivas().catch(() => null),
         ]);
-        if (zonas && zonas.length > 0) {
-          this.mapService.renderPatrolZones(zonas);
-          if (this.settingsService.bucleZonasActivo()) {
-            this._rebalanceAutoPatrols();
-          }
-        }
         if (Array.isArray(asignaciones)) {
-          const prevAsigs = this.store.asignaciones();
-          const newIds = new Set(asignaciones.map(a => a.id_asignacion));
-          for (const prev of prevAsigs) {
-            if (!newIds.has(prev.id_asignacion)) {
-              this._releaseMissionZone(prev);
+          // Evitar sobrescribir el estado global con un arreglo vacío transitorio mientras sigo-api está rotando o insertando la nueva asignación
+          const isRotating = this.isAutoMode() && asignaciones.length === 0 && this.store.asignaciones().length > 0 && this.store.unidades().length > 0;
+          if (!isRotating) {
+            const prevAsigs = this.store.asignaciones();
+            const newIds = new Set(asignaciones.map(a => a.id_asignacion));
+            for (const prev of prevAsigs) {
+              if (!newIds.has(prev.id_asignacion)) {
+                this._releaseMissionZone(prev);
+              }
+            }
+            this.store.setAsignaciones(asignaciones);
+            asignaciones.forEach(a => this.mapService.upsertPolygon(a));
+            if (!this.isAutoMode()) {
+              this.reconcileActiveManualZones();
             }
           }
-          this.store.setAsignaciones(asignaciones);
-          asignaciones.forEach(a => this.mapService.upsertPolygon(a));
-          this.reconcileActiveManualZones();
         }
         if (!sesiones) return;
 
@@ -1966,7 +2733,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         const sesionMap = new Map(sesiones.map(s => [s.id_sesion, s]));
         const sesionesConPos = sesiones.map(s => {
           const pos = posMap.get(s.id_sesion);
-          return pos ? { ...s, coordenadas_rt: { lat: pos.latitud, lng: pos.longitud } } : s;
+          const prev = this.store.unidades().find(u => u.id_sesion === s.id_sesion);
+          return pos
+            ? { ...s, coordenadas_rt: { lat: pos.latitud, lng: pos.longitud } }
+            : (prev?.coordenadas_rt ? { ...s, coordenadas_rt: prev.coordenadas_rt } : s);
         });
 
         const idsActuales = new Set(this.store.unidades().map(u => u.id_sesion));
@@ -1981,11 +2751,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         if (cerradas.length > 0) {
           cerradas.forEach(u => this.mapService.removeUnitMarkerById?.(u.id_sesion));
           this.store.unidades.update(lista => lista.filter(u => idsNuevos.has(u.id_sesion)));
+          cerradas.forEach(u => this.notificarBajaUnidadReal(u));
         }
 
         const selId = this.store.unidadSeleccionada()?.id_sesion;
 
-        const asigsActivas = (asignaciones ?? this.store.asignaciones()).filter(
+        const asigsActivas = this.store.asignaciones().filter(
           a => a.estado_mision !== 'COMPLETADA' && a.estado_mision !== 'CANCELADA'
         );
         const asigMap = new Map(asigsActivas.map(a => [a.id_sesion, a]));
@@ -1994,7 +2765,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           const fresh = sesionMap.get(u.id_sesion);
           const pos = posMap.get(u.id_sesion);
           const base = fresh ? { ...u, ...fresh } : u;
-          const asig = asigMap.get(u.id_sesion);
+          const asig = asigMap.get(u.id_sesion) ?? u.asignacion_activa;
           let estado = base.estado_operativo;
           if (asig && estado === EstadoOperativo.DISPONIBLE) {
             estado = asig.estado_mision === 'PATRULLANDO'
@@ -2003,6 +2774,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           }
           const updated = {
             ...base,
+            asignacion_activa: asig ?? base.asignacion_activa,
             estado_operativo: estado,
             ...(pos ? { coordenadas_rt: { lat: pos.latitud, lng: pos.longitud } } : {}),
           };
@@ -2014,36 +2786,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         }));
 
         this.updateAllDispatchCountdowns();
-        this._syncTacticoBackend().catch(() => {});
       } catch (err) {
         console.warn('[Polling] Error:', err);
       }
     };
 
     refreshDashboard();
-    this.pollingTimer = setInterval(refreshDashboard, 2500);
-
-    // GPS casi en vivo: solo posiciones (consulta liviana), no depende de Realtime
-    const refreshPositions = async () => {
-      try {
-        const posiciones = await this.supabase.getUltimasPosiciones();
-        if (!posiciones.length) return;
-        const posMap = new Map(posiciones.map(p => [p.id_sesion, p]));
-        let changed = false;
-        const nuevaLista = this.store.unidades().map(u => {
-          const pos = posMap.get(u.id_sesion);
-          if (!pos) return u;
-          const prev = u.coordenadas_rt;
-          if (prev && prev.lat === pos.latitud && prev.lng === pos.longitud) return u;
-          changed = true;
-          const updated = { ...u, coordenadas_rt: { lat: pos.latitud, lng: pos.longitud } };
-          this.mapService.upsertUnitMarker(updated);
-          return updated;
-        });
-        if (changed) this.store.unidades.set(nuevaLista);
-      } catch { /* silencioso */ }
-    };
-    this.gpsTimer = setInterval(refreshPositions, 2000);
+    this.pollingTimer = setInterval(refreshDashboard, 3000);
 
     // Cronómetro global de traslado y arribo a zonas para unidades en camino
     this.updateAllDispatchCountdowns();
@@ -2057,6 +2806,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.moveTimers.forEach(timers => timers.forEach(t => clearInterval(t)));
     this.dispatchIntervals.forEach(t => clearInterval(t));
     if (this.pollingTimer) clearInterval(this.pollingTimer);
+    if (this.tacticalSyncTimer) clearInterval(this.tacticalSyncTimer);
     if (this.gpsTimer) clearInterval(this.gpsTimer);
     if (this.etaGlobalTimer) clearInterval(this.etaGlobalTimer);
     this.mapService.destroy();
@@ -2193,8 +2943,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
 
         if (asig && asig.hora_despacho) {
           let asigLimitMin = limitMin;
-          const match = asig.instrucciones?.match(/\[ETA:(\d+)\]/);
-          if (match) asigLimitMin = parseInt(match[1], 10);
+          if (asig.instrucciones?.includes('Código Rojo')) {
+            const match = asig.instrucciones.match(/\[ETA:(\d+)\]/);
+            if (match) asigLimitMin = parseInt(match[1], 10);
+          }
 
           const raw = asig.hora_despacho;
           const iso = raw.endsWith('Z') || raw.includes('+') ? raw : raw + 'Z';
@@ -2276,18 +3028,19 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         is_manual: false,
         angulo_orbita: 0,
       }),
-    }).catch(() => {});
+    }).catch(() => { });
 
     this._rebalanceAutoPatrols();
   }
 
   eliminarPatrullaFicticia(p: PatrullaFicticia): void {
+    this._deletedPatrolIds.add(p.id);
     this._clearTimers(p.id);
     this.mapService.removeFicticiaMarker(p.id);
     this.patrullasFicticias.update(list => list.filter(x => x.id !== p.id));
     fetch(`${environment.apiBaseUrl}/tactico/patrullas/${encodeURIComponent(p.id)}`, {
       method: 'DELETE',
-    }).catch(() => {});
+    }).catch(() => { });
     if (this.patrullaFicticiaSeleccionada()?.id === p.id) {
       this.patrullaFicticiaSeleccionada.set(null);
     }
@@ -2540,7 +3293,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ zona: sosZona }),
-            }).catch(() => {});
+            }).catch(() => { });
           }
         } else if (item.idReal) {
           try {
@@ -2718,7 +3471,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   getActiveManualZoneIds(): Set<number> {
     const activeIds = new Set<number>();
 
-    // 1. Asignaciones reales activas del store
+    // Si estamos en modo Automático u Optimizado, la selección de zonas activas la controla
+    // exclusivamente el ciclo rotativo (evita que despachos anteriores se sumen y dupliquen la cantidad de zonas)
+    if (this.isAutoMode()) {
+      return activeIds;
+    }
+
+    // 1. Asignaciones reales activas del store (solo en Modo Manual)
     const asignaciones = this.store.asignaciones();
     for (const a of asignaciones) {
       if (a.estado_mision !== 'COMPLETADA' && a.estado_mision !== 'CANCELADA') {
@@ -2842,16 +3601,17 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const z = this.zonaFicticiaSeleccionada;
     if (!p || !z) return;
 
-    this._patch(p.id, { isManual: true });
+    this._patch(p.id, { isManual: true, estado: 'EN_RUTA', destinoZone: z });
     this.mapService.ensureActiveZone(z);
-    this._dispatchToZone(p, z);
+    this.mapService.updateFicticiaMarkerColor(p.id, 'EN_RUTA');
     this.patrullaParaDespachoFicticia = null;
-    this._rebalanceAutoPatrols();
     fetch(`${environment.apiBaseUrl}/tactico/patrullas/${encodeURIComponent(p.id)}/despachar`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ zona: z }),
-    }).catch(() => {});
+    })
+      .then(() => this._pullTacticoStateFromBackend())
+      .catch(() => { });
     this.mostrarToast({
       type: 'MENSAJE',
       titulo: 'Patrulla Demo Despachada',
@@ -2869,72 +3629,202 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     });
   }
 
-  private _tacticoBootstrapped = false;
+  private tacticalSyncTimer: any = null;
+  private _deletedPatrolIds = new Set<string>();
+  private _lastServerZoneKey = '';
+  private _lastRealesSyncKey = '';
+
+  private async _syncRealesToBackend(): Promise<void> {
+    try {
+      const reales = this.store.unidades()
+        .filter(u => u.estado_operativo !== EstadoOperativo.INACTIVO && !(u as any).fecha_cierre)
+        .map(u => {
+          const info = this.getUnidadUveInfo(u);
+          const asig = this.getAsignacionActiva(u);
+          const matched = asig ? findMatchingHotspotZone(asig) : null;
+          return {
+            id_sesion: u.id_sesion,
+            tipo_medio: info.tipoMedio,
+            valor_uve: info.valorUve,
+            destino_zona_id: matched?.id ?? null,
+          };
+        });
+      const key = JSON.stringify(reales);
+      if (key === this._lastRealesSyncKey) return;
+      this._lastRealesSyncKey = key;
+      await fetch(`${environment.apiBaseUrl}/tactico/reales-sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reales }),
+      });
+    } catch { }
+  }
+
+  private async _pullTacticoStateFromBackend(): Promise<void> {
+    try {
+      const res = await fetch(`${environment.apiBaseUrl}/tactico/estado`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const serverModo = (data.modo_despacho as 'MANUAL' | 'AUTO' | 'OPTIMIZADO') || 'MANUAL';
+      const serverK = Number(data.k_zonas) || 3;
+      const serverIntervalo = Number(data.intervalo_rotacion_seg) || 120;
+      const serverZoneIds: number[] = Array.isArray(data.zonas_activas_ids) ? data.zonas_activas_ids : [];
+      const serverRemaining = Number(data.segundos_restantes) || 0;
+
+      if (this.modoDespacho() !== serverModo) {
+        this._setModo(serverModo);
+      }
+      if (this.settingsService.cantidadZonasRotacion() !== serverK) {
+        this.settingsService.cantidadZonasRotacion.set(serverK);
+      }
+      if (this.settingsService.intervaloRotacionSeg() !== serverIntervalo) {
+        this.settingsService.intervaloRotacionSeg.set(serverIntervalo);
+      }
+      const serverEta = Number(data.tiempo_llegada_min) || 15;
+      const localEtaSaved = Number(localStorage.getItem('sigo_tiempo_llegada_min'));
+      if (localEtaSaved >= 1 && localEtaSaved <= 120) {
+        if (this.settingsService.tiempoLlegadaMin() !== localEtaSaved) {
+          this.settingsService.tiempoLlegadaMin.set(localEtaSaved);
+        }
+        if (serverEta !== localEtaSaved) {
+          this.settingsService.syncTacticoConfig(
+            this.settingsService.cantidadZonasRotacion(),
+            this.settingsService.intervaloRotacionSeg(),
+            localEtaSaved
+          );
+        }
+      } else if (this.settingsService.tiempoLlegadaMin() !== serverEta) {
+        this.settingsService.tiempoLlegadaMin.set(serverEta);
+      }
+
+      this.mapService.applyServerCycleState(
+        serverModo,
+        serverZoneIds,
+        serverRemaining,
+        Array.isArray(data.zonas_catalogo) ? data.zonas_catalogo : undefined
+      );
+
+      // Si cambió la rotación de zonas en el servidor y estamos en AUTO/OPTIMIZADO, actualizar estado local sin re-despachar desde el navegador
+      const zoneKey = `${serverModo}:${serverZoneIds.join(',')}`;
+      if (serverModo !== 'MANUAL' && serverZoneIds.length > 0 && zoneKey !== this._lastServerZoneKey) {
+        this._lastServerZoneKey = zoneKey;
+      } else if (serverModo === 'MANUAL') {
+        this._lastServerZoneKey = '';
+      }
+
+      if (Array.isArray(data.patrullas)) {
+        const currentList = this.patrullasFicticias();
+        const serverIds = new Set<string>(data.patrullas.map((sp: any) => String(sp.id)));
+
+          // Protección anti-borrado: si el servidor devuelve menos patrullas de las que conozco localmente
+          // (instancia reiniciada / estado vacío) NO se borran del mapa: se re-siembran en el servidor.
+          const faltantes = currentList.filter(lp => !serverIds.has(lp.id) && !this._deletedPatrolIds.has(lp.id));
+          for (const lp of faltantes) {
+            const medioSeed = this.getFicticiaMedioCode(lp);
+            fetch(`${environment.apiBaseUrl}/tactico/patrullas`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: lp.id,
+                nombre: lp.nombre,
+                tipo_medio: medioSeed,
+                valor_uve: this.getFicticiaUve(lp),
+                dotacion_total: lp.dotacion_total ?? 2,
+                estado: 'DISPONIBLE',
+                lat: lp.lat,
+                lng: lp.lng,
+                destino_zona_id: null,
+                destino_zona_json: null,
+                is_manual: false,
+                angulo_orbita: 0,
+              }),
+            }).catch(() => { });
+            this.mapService.upsertFicticiaMarker(lp.id, lp.lat, lp.lng, medioSeed, lp.estado, this.getFicticiaUve(lp), lp.dotacion_total ?? 2);
+          }
+          if (faltantes.length > 0 && data.patrullas.length === 0) {
+            return;
+          }
+
+          const syncedList: PatrullaFicticia[] = data.patrullas.map((sp: any) => {
+            const medio = (sp.tipo_medio || 'RPD') as TipoMedio;
+            const tipoCompat =
+              medio === 'FZ'
+                ? 'FURGON_Z'
+                : medio === 'MTT'
+                  ? 'MOTO'
+                  : medio === 'CB'
+                    ? 'BICICLETA'
+                    : medio === 'INF'
+                      ? 'INFANTERIA'
+                      : 'PATRULLA';
+            const dotacion = Number(sp.dotacion_total) || (medio === 'RPT' ? 3 : medio === 'FZ' || medio === 'RPD' ? 2 : 1);
+            const uve = Number(sp.valor_uve) || CONFIG_MEDIOS_UVE[medio]?.valorUve || 0.8;
+            const estado = (sp.estado as 'DISPONIBLE' | 'EN_RUTA' | 'PATRULLANDO') || 'DISPONIBLE';
+            const lat = Number(sp.lat) || -33.0235;
+            const lng = Number(sp.lng) || -71.5510;
+
+            let destinoZone: HotspotZone | undefined = undefined;
+            if (sp.destino_zona_id != null) {
+              destinoZone =
+                HOTSPOT_ZONES.find(z => z.id === Number(sp.destino_zona_id)) ??
+                (sp.destino_zona_json
+                  ? {
+                    id: Number(sp.destino_zona_json.id),
+                    name: sp.destino_zona_json.name || 'Zona',
+                    address: sp.destino_zona_json.address || 'Sector Táctico',
+                    lat: Number(sp.destino_zona_json.lat),
+                    lng: Number(sp.destino_zona_json.lng),
+                    radio_m: Number(sp.destino_zona_json.radio_m) || 160,
+                    crimeCount: Number(sp.destino_zona_json.crimeCount) || 6,
+                    scoreGravedad: Number(sp.destino_zona_json.scoreGravedad) || 45,
+                    nivelRiesgo: sp.destino_zona_json.nivelRiesgo || 'MEDIO',
+                    uveObjetivoMin: Number(sp.destino_zona_json.uveObjetivoMin) || 0.45,
+                  }
+                  : undefined);
+            }
+
+            // Cancelar cualquier timer local residual: el servidor 24/7 mueve las coordenadas en tiempo real
+            this._clearTimers(sp.id);
+
+            // Siempre usar upsertFicticiaMarker para recrear el marcador tras recargar o cambiar de pestaña
+            this.mapService.upsertFicticiaMarker(sp.id, lat, lng, medio, estado, uve, dotacion);
+
+            if (sp.is_manual && destinoZone && serverModo === 'MANUAL') {
+              this.mapService.ensureActiveZone(destinoZone);
+            }
+
+            return {
+              id: String(sp.id),
+              nombre: sp.nombre,
+              tipo: tipoCompat,
+              tipo_medio: medio,
+              valor_uve: uve,
+              dotacion_total: dotacion,
+              estado,
+              lat,
+              lng,
+              destinoZone,
+              isManual: Boolean(sp.is_manual),
+            };
+          });
+
+          const prevSig = currentList.map(x => `${x.id}:${x.estado}:${x.lat}:${x.lng}:${x.destinoZone?.id}`).join('|');
+          const nextSig = syncedList.map(x => `${x.id}:${x.estado}:${x.lat}:${x.lng}:${x.destinoZone?.id}`).join('|');
+          if (prevSig !== nextSig) {
+            this.patrullasFicticias.set(syncedList);
+            const sel = this.patrullaFicticiaSeleccionada();
+            if (sel) {
+              const updatedSel = syncedList.find(x => x.id === sel.id) ?? null;
+              this.patrullaFicticiaSeleccionada.set(updatedSel);
+            }
+          }
+        }
+      } catch { }
+    }
 
   private async _syncTacticoBackend(): Promise<void> {
-    const res = await fetch(`${environment.apiBaseUrl}/tactico/estado`);
-    if (!res.ok) return;
-    const data = await res.json();
-
-    // Si el servidor arrancó vacío y el navegador ya tenía patrullas demo, subirlas al motor 24/7
-    if (!this._tacticoBootstrapped && Array.isArray(data.patrullas) && data.patrullas.length === 0 && this.patrullasFicticias().length > 0) {
-      this._tacticoBootstrapped = true;
-      for (const p of this.patrullasFicticias()) {
-        const medio = this.getFicticiaMedioCode(p);
-        await fetch(`${environment.apiBaseUrl}/tactico/patrullas`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: p.id,
-            nombre: p.nombre,
-            tipo_medio: medio,
-            valor_uve: this.getFicticiaUve(p),
-            dotacion_total: p.dotacion_total ?? 2,
-            estado: p.estado,
-            lat: p.lat,
-            lng: p.lng,
-            destino_zona_id: p.destinoZone?.id ?? null,
-            destino_zona_json: p.destinoZone ?? null,
-            is_manual: Boolean(p.isManual),
-            angulo_orbita: 0,
-          }),
-        }).catch(() => {});
-      }
-      return;
-    }
-    this._tacticoBootstrapped = true;
-
-    if (data.modo_despacho && data.modo_despacho !== this.modoDespacho()) {
-      this._setModo(data.modo_despacho);
-    }
-
-    if (Array.isArray(data.patrullas) && data.patrullas.length > 0) {
-      const serverMap = new Map<string, any>(data.patrullas.map((sp: any) => [sp.id, sp]));
-      this.patrullasFicticias.update(list =>
-        list.map(p => {
-          const sp = serverMap.get(p.id);
-          if (!sp) return p;
-          const nextState = sp.estado as PatrullaFicticia['estado'];
-          const nextZone = sp.destino_zona_json ?? undefined;
-          if (p.estado !== nextState) {
-            this.mapService.updateFicticiaMarkerColor(p.id, nextState);
-          }
-          this.mapService.moveFicticiaMarker(p.id, Number(sp.lat), Number(sp.lng));
-          if (nextZone && nextState !== 'DISPONIBLE') {
-            this.mapService.ensureActiveZone(nextZone);
-          }
-          return {
-            ...p,
-            lat: Number(sp.lat),
-            lng: Number(sp.lng),
-            estado: nextState,
-            destinoZone: nextZone,
-            isManual: Boolean(sp.is_manual),
-          };
-        })
-      );
-      this.mapService.syncCycleState();
-    }
+    await this._pullTacticoStateFromBackend();
   }
 
   private _dispatchToZone(patrulla: PatrullaFicticia, zone: HotspotZone): void {

@@ -437,16 +437,36 @@ export class ApiService {
   }
 
   async getZonas(): Promise<ZonaPatrullaje[]> {
-    const { data, error } = await this.supabase.client
-      .from('zonas_patrullaje')
-      .select('*')
-      .order('id_zona', { ascending: true });
+    const [{ data, error }, tacticoRes] = await Promise.all([
+      this.supabase.client
+        .from('zonas_patrullaje')
+        .select('*')
+        .order('id_zona', { ascending: true }),
+      fetch(`${this.baseUrl}/tactico/estado`).then(r => (r.ok ? r.json() : null)).catch(() => null),
+    ]);
 
     if (error) {
       console.error('[API] Error getZonas:', error);
       return [];
     }
+
+    const serverCatalogMap = new Map<number, any>();
+    if (Array.isArray(tacticoRes?.zonas_catalogo)) {
+      for (const sz of tacticoRes.zonas_catalogo) {
+        serverCatalogMap.set(Number(sz.id), sz);
+      }
+    }
+
     const overlay = this.loadZonasCalibradasOverlay();
+    for (const [id, sz] of serverCatalogMap.entries()) {
+      if (Array.isArray(sz.delitos) && sz.delitos.length > 0) {
+        overlay[id] = {
+          ...(overlay[id] || {}),
+          delitos: sz.delitos,
+        };
+      }
+    }
+
     const enriched = ((data ?? []) as ZonaPatrullaje[]).map((z) => this.enrichZonaCalibrada(z, overlay));
     this.saveZonasCalibradasOverlay(
       enriched.reduce((acc, z) => {
@@ -460,6 +480,7 @@ export class ApiService {
         return acc;
       }, {} as Record<number, Partial<ZonaPatrullaje>>)
     );
+
     return enriched;
   }
 
@@ -510,6 +531,15 @@ export class ApiService {
     };
     this.saveZonasCalibradasOverlay(overlay);
 
+    await fetch(`${this.baseUrl}/tactico/zonas-calibrar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id_zona: savedRow.id_zona,
+        delitos: overlay[savedRow.id_zona].delitos || [],
+      }),
+    }).catch(() => { });
+
     // Sincronizar opcionalmente con sigo-api si está levantado
     firstValueFrom(
       this.http.post(`${this.baseUrl}/zonas/riesgo`, {
@@ -534,6 +564,11 @@ export class ApiService {
     const overlay = this.loadZonasCalibradasOverlay();
     delete overlay[idZona];
     this.saveZonasCalibradasOverlay(overlay);
+    await fetch(`${this.baseUrl}/tactico/zonas-calibrar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_zona: null }),
+    }).catch(() => { });
   }
 
   /**
@@ -560,6 +595,14 @@ export class ApiService {
       delitos: [nuevoDelito, ...listaActual],
     };
     this.saveZonasCalibradasOverlay(overlay);
+    await fetch(`${this.baseUrl}/tactico/zonas-calibrar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id_zona: idZona,
+        delitos: overlay[idZona].delitos,
+      }),
+    }).catch(() => { });
     return this.getZonas();
   }
 
@@ -570,6 +613,14 @@ export class ApiService {
       actual.delitos = actual.delitos.filter((d) => d.id !== delitoId);
       overlay[idZona] = actual;
       this.saveZonasCalibradasOverlay(overlay);
+      await fetch(`${this.baseUrl}/tactico/zonas-calibrar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id_zona: idZona,
+          delitos: actual.delitos,
+        }),
+      }).catch(() => { });
     }
     return this.getZonas();
   }

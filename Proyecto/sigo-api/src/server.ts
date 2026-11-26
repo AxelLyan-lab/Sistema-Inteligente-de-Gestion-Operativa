@@ -31,10 +31,10 @@ app.use(helmet());
 const allowedOrigins = process.env.NODE_ENV === 'development'
   ? true
   : (process.env.CORS_ORIGIN
-      ? (process.env.CORS_ORIGIN.includes(',')
-          ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
-          : process.env.CORS_ORIGIN)
-      : '*');
+    ? (process.env.CORS_ORIGIN.includes(',')
+      ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
+      : process.env.CORS_ORIGIN)
+    : '*');
 
 app.use(cors({
   origin: allowedOrigins,
@@ -64,11 +64,13 @@ app.get('/health', (_req, res) => {
 // ── Manejador de errores global ───────────────────────────
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`\n🚔 S.I.G.O. Patrol API corriendo en http://localhost:${PORT}`);
-  console.log(`   Ambiente: ${process.env.NODE_ENV ?? 'development'}\n`);
-  startSessionSweeper();
-  tacticalEngine.start().catch(err => console.error('[TacticalEngine] Error al iniciar:', err));
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`\n🚔 S.I.G.O. Patrol API corriendo en http://localhost:${PORT}`);
+    console.log(`   Ambiente: ${process.env.NODE_ENV ?? 'development'}\n`);
+    startSessionSweeper();
+    tacticalEngine.start().catch(err => console.error('[TacticalEngine] Error al iniciar:', err));
+  });
+}
 
 export default app;
