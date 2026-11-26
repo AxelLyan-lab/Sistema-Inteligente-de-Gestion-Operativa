@@ -1,4 +1,4 @@
-# S.I.G.O. — Sprint 2 (Hito 2)
+# S.I.G.O. 
 
 **S.I.G.O.** es una plataforma integral de comando, control, despacho inteligente y supervisión táctica en tiempo real para patrullaje preventivo y respuesta reactiva ante emergencias (**SOS**), desarrollada para **Carabineros de Chile** (con entorno de demostración centralizado en **Viña del Mar**, escalable al modelo nacional del **Plan Cuadrante de Seguridad Preventiva**).
 
